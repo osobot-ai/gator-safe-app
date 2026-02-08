@@ -1,4 +1,4 @@
-import { type Address, type Hex, encodePacked, parseEther, parseUnits } from 'viem'
+import { type Address, encodePacked, parseEther, parseUnits } from 'viem'
 import { getAddresses } from '../config/addresses'
 import type { Caveat } from './storage'
 

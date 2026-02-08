@@ -23,9 +23,9 @@ import { saveDelegation, type StoredDelegation } from '../lib/storage'
 type Step = 1 | 2 | 3 | 4
 type PermissionType = 'eth' | 'erc20'
 
-const chains: Record<number, typeof baseSepolia> = {
+const chains: Record<number, (typeof baseSepolia) | (typeof base)> = {
   84532: baseSepolia,
-  8453: base,
+  8453: base as any,
 }
 
 export default function CreateDelegation() {
@@ -116,14 +116,14 @@ export default function CreateDelegation() {
       const typedData = buildDelegationTypedData(delegation, safe.chainId)
 
       // Request signature via Safe SDK
-      const result = await sdk.txs.signTypedMessage(typedData as any)
+      const result = await sdk.txs.signTypedMessage(typedData as any) as any
 
       // Store the delegation
       const delegationHash = computeDelegationHash(delegation)
       const stored: StoredDelegation = {
         delegation: {
           ...delegation,
-          signature: (result?.signature || '0x') as Hex,
+          signature: (result?.signature || result?.safeTxHash || '0x') as Hex,
         },
         meta: {
           label: permType === 'eth'

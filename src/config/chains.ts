@@ -1,4 +1,5 @@
-import { http, createConfig, type Chain } from 'wagmi'
+import { http, createConfig } from 'wagmi'
+import { type Chain } from 'viem'
 import { baseSepolia, base, foundry } from 'wagmi/chains'
 import { safe } from 'wagmi/connectors'
 

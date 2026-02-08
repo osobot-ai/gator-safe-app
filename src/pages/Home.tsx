@@ -6,9 +6,9 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 
-const chains: Record<number, typeof baseSepolia> = {
+const chains: Record<number, (typeof baseSepolia) | (typeof base)> = {
   84532: baseSepolia,
-  8453: base,
+  8453: base as any,
 }
 
 interface HomeProps {

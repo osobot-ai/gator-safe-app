@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { type Address, encodeFunctionData } from 'viem'
+import { encodeFunctionData } from 'viem'
 import { getDelegations, updateDelegationStatus, removeDelegation, type StoredDelegation } from '../lib/storage'
 import { DelegationManagerABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
