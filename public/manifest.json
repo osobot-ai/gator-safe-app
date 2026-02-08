@@ -1,0 +1,5 @@
+{
+  "name": "Gator Delegations",
+  "description": "ERC-7710 delegation management for Safe multisigs",
+  "iconPath": "logo.svg"
+}

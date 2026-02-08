@@ -1,38 +1,73 @@
-# Gator Safe App
+# React + TypeScript + Vite
 
-ERC-7710 delegation management for Safe multisigs.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-Install the MetaMask DeleGatorModule on your Safe and create scoped permissions for delegates — with full multi-sig signing flow.
+Currently, two official plugins are available:
 
-## Features
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-- Install Gator (DeleGator) Module on any Safe
-- Create ETH spending limit permissions (NativeTokenPeriodTransferEnforcer)
-- Create ERC-20 spending limit permissions (ERC20PeriodTransferEnforcer)
-- Multi-sig EIP-712 signing flow (propose → collect sigs → threshold)
-- Download/copy signed delegations for delegates
-- View and revoke active delegations
+## React Compiler
 
-## Tech Stack
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-- React + TypeScript + Vite
-- Safe Apps SDK + React SDK
-- wagmi + viem
-- MetaMask Smart Accounts Kit
-- Tailwind CSS
+## Expanding the ESLint configuration
 
-## Chains
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-- Base Sepolia (testing)
-- Base (production)
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
 
-## Development
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
 
-```bash
-npm install
-npm run dev
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-## Built by
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-[Osobot](https://x.com/Osobotai) 🐻 with [Ryan McPeck](https://x.com/McOso)
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```
