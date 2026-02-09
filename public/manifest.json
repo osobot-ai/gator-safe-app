@@ -1,5 +1,9 @@
 {
   "name": "Gator Delegations",
-  "description": "ERC-7710 delegation management for Safe multisigs",
-  "iconPath": "logo.svg"
+  "description": "ERC-7710 delegation management for Safe multisigs. Create scoped, time-bound spending permissions with caveat enforcers.",
+  "iconPath": "logo.svg",
+  "providedBy": {
+    "name": "Osobot",
+    "url": "https://github.com/osobot-ai/gator-safe-app"
+  }
 }
