@@ -1,16 +1,12 @@
 import { useState } from 'react'
-import { WagmiProvider } from 'wagmi'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { wagmiConfig } from './config/chains'
 import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
 import Delegations from './pages/Delegations'
 import ImportDelegation from './pages/ImportDelegation'
+import RedeemDelegation from './pages/RedeemDelegation'
 
-const queryClient = new QueryClient()
-
-type Page = 'home' | 'create' | 'delegations' | 'import'
+type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem'
 
 function NavButton({
   active,
@@ -71,6 +67,9 @@ function AppInner() {
           <NavButton active={page === 'import'} onClick={() => setPage('import')}>
             Import
           </NavButton>
+          <NavButton active={page === 'redeem'} onClick={() => setPage('redeem')}>
+            Redeem
+          </NavButton>
         </div>
       </nav>
 
@@ -80,17 +79,12 @@ function AppInner() {
         {page === 'create' && <CreateDelegation />}
         {page === 'delegations' && <Delegations />}
         {page === 'import' && <ImportDelegation />}
+        {page === 'redeem' && <RedeemDelegation />}
       </main>
     </div>
   )
 }
 
 export default function App() {
-  return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <AppInner />
-      </QueryClientProvider>
-    </WagmiProvider>
-  )
+  return <AppInner />
 }
