@@ -37,6 +37,13 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-[#0c0c0c]">
+      {/* Disclaimer */}
+      <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2">
+        <p className="max-w-4xl mx-auto text-xs text-amber-400/80 text-center">
+          ⚠️ This app was built by an AI agent. It is experimental and unaudited. Use at your own risk.
+        </p>
+      </div>
+
       {/* Header */}
       <header className="border-b border-white/10 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">

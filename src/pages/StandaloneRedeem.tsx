@@ -257,6 +257,13 @@ export default function StandaloneRedeem() {
 
   return (
     <div className="min-h-screen bg-[#0c0c0c] p-6">
+      {/* Disclaimer */}
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 mb-4 max-w-2xl mx-auto">
+        <p className="text-xs text-amber-400/80 text-center">
+          ⚠️ This app was built by an AI agent. It is experimental and unaudited. Use at your own risk.
+        </p>
+      </div>
+
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center mb-8">
