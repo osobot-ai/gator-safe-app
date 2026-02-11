@@ -10,8 +10,9 @@ import {
   erc20Abi
 } from 'viem'
 import { DelegationManager } from '@metamask/smart-accounts-kit/contracts'
-import { ExecutionMode } from '@metamask/smart-accounts-kit'
+import { ExecutionMode, createExecution } from '@metamask/smart-accounts-kit'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { getEnvironment } from '../lib/environment'
 
 interface RedemptionForm {
   amount: string
@@ -64,7 +65,7 @@ export default function RedeemDelegation() {
         ...selectedDelegation.delegation,
         caveats: selectedDelegation.delegation.caveats.map(caveat => ({
           ...caveat,
-          args: '0x' as Hex, // Default empty args
+          args: '0x' as Hex, // Default empty args for redemption
         }))
       }
       const isEthTransfer = selectedDelegation.meta.scopeType === 'ethSpendingLimit'
@@ -72,12 +73,12 @@ export default function RedeemDelegation() {
       let execution
       
       if (isEthTransfer) {
-        // ETH transfer
-        execution = {
+        // ETH transfer — use SDK's createExecution
+        execution = createExecution({
           target: form.recipient as Address,
           value: parseEther(form.amount),
           callData: '0x' as Hex,
-        }
+        })
       } else {
         // ERC-20 transfer
         const tokenAddress = selectedDelegation.meta.tokenAddress
@@ -93,11 +94,11 @@ export default function RedeemDelegation() {
           args: [form.recipient as Address, parseUnits(form.amount, decimals)],
         })
 
-        execution = {
+        execution = createExecution({
           target: tokenAddress,
           value: 0n,
           callData: transferCalldata,
-        }
+        })
       }
 
       // Encode the redemption calldata
@@ -107,9 +108,9 @@ export default function RedeemDelegation() {
         executions: [[execution]],
       })
 
-      // Get the DelegationManager address from the environment
-      // This should target the delegator's smart account (module address)
-      const targetAddress = delegation.delegator
+      // Per SDK docs: EOA/wallet delegates send redeemCalldata to the DelegationManager
+      const environment = getEnvironment(safe.chainId)
+      const targetAddress = environment.DelegationManager
 
       // Submit transaction via Safe Apps SDK
       const txResponse = await sdk.txs.send({
