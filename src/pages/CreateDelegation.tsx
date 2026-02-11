@@ -1,23 +1,23 @@
 import { useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, type Address, type Hex, isAddress } from 'viem'
+import { createPublicClient, http, type Address, type Hex, isAddress, parseEther, parseUnits } from 'viem'
 import { baseSepolia, base } from 'viem/chains'
+import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { DEFAULT_SALT } from '../lib/module'
 import {
-  ROOT_AUTHORITY,
   generateSalt,
   buildDelegationTypedData,
   computeDelegationHash,
   type DelegationStruct,
 } from '../lib/delegations'
 import {
-  buildEthSpendingCaveats,
-  buildErc20SpendingCaveats,
   type PeriodType,
   periodLabel,
+  periodToSeconds,
 } from '../lib/enforcers'
+import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 
 type Step = 1 | 2 | 3 | 4
@@ -85,30 +85,59 @@ export default function CreateDelegation() {
         args: [safe.safeAddress as Address, DEFAULT_SALT],
       }) as Address
 
-      // Build caveats
+      // Build delegation using SDK's createDelegation()
+      const environment = getEnvironment(safe.chainId)
+      const now = Math.floor(Date.now() / 1000)
       const expiryTs = expiryEnabled && expiryDate
         ? Math.floor(new Date(expiryDate).getTime() / 1000)
         : undefined
 
-      const caveats = permType === 'eth'
-        ? buildEthSpendingCaveats(safe.chainId, amount, period, expiryTs)
-        : buildErc20SpendingCaveats(
-            safe.chainId,
-            tokenAddress as Address,
-            amount,
-            tokenDecimals,
-            period,
-            expiryTs,
-          )
+      // Build scope based on permission type
+      const scope = permType === 'eth'
+        ? {
+            type: 'nativeTokenPeriodTransfer' as const,
+            periodAmount: parseEther(amount),
+            periodDuration: Number(periodToSeconds(period)),
+            startDate: now,
+          }
+        : {
+            type: 'erc20PeriodTransfer' as const,
+            tokenAddress: tokenAddress as Address,
+            periodAmount: parseUnits(amount, tokenDecimals),
+            periodDuration: Number(periodToSeconds(period)),
+            startDate: now,
+          }
 
-      // Build delegation
+      // Build additional caveats
+      const additionalCaveats: Array<any> = []
+      if (expiryTs) {
+        additionalCaveats.push({
+          type: 'timestamp' as const,
+          afterThreshold: now,
+          beforeThreshold: expiryTs,
+        })
+      }
+
       const salt = generateSalt()
-      const delegation: DelegationStruct = {
-        delegate: delegate as Address,
-        delegator: moduleAddress,
-        authority: ROOT_AUTHORITY,
-        caveats,
+      const sdkDelegation = createDelegation({
+        to: delegate as Address,
+        from: moduleAddress,
+        environment: environment as any,
+        scope: scope as any,
+        caveats: additionalCaveats.length > 0 ? additionalCaveats : undefined,
         salt,
+      })
+
+      // Convert SDK delegation to our DelegationStruct for storage/signing
+      const delegation: DelegationStruct = {
+        delegate: sdkDelegation.delegate as Address,
+        delegator: sdkDelegation.delegator as Address,
+        authority: sdkDelegation.authority as Hex,
+        caveats: sdkDelegation.caveats.map((c: any) => ({
+          enforcer: c.enforcer as Address,
+          terms: c.terms as Hex,
+        })),
+        salt: sdkDelegation.salt as Hex,
         signature: '0x' as Hex,
       }
 

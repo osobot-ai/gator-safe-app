@@ -18,7 +18,7 @@ import {
   erc20Abi
 } from 'viem'
 import { DelegationManager } from '@metamask/smart-accounts-kit/contracts'
-import { ExecutionMode } from '@metamask/smart-accounts-kit'
+import { ExecutionMode, createExecution } from '@metamask/smart-accounts-kit'
 import { getAddresses } from '../config/addresses'
 import type { StoredDelegation } from '../lib/storage'
 
@@ -113,12 +113,12 @@ export default function StandaloneRedeem() {
       let execution
       
       if (isEthTransfer) {
-        // ETH transfer
-        execution = {
+        // ETH transfer — use SDK's createExecution
+        execution = createExecution({
           target: form.recipient as Address,
           value: parseEther(form.amount),
           callData: '0x' as Hex,
-        }
+        })
       } else {
         // ERC-20 transfer
         const tokenAddress = parsedDelegation.meta.tokenAddress
@@ -145,11 +145,11 @@ export default function StandaloneRedeem() {
           args: [form.recipient as Address, parseUnits(form.amount, decimals)],
         })
 
-        execution = {
+        execution = createExecution({
           target: tokenAddress,
           value: 0n,
           callData: transferCalldata,
-        }
+        })
       }
 
       // Encode the redemption calldata
