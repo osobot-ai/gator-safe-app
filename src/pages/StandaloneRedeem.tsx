@@ -98,10 +98,14 @@ interface SwapTrade {
   error: unknown
 }
 
-const KNOWN_TOKENS: Record<string, { address: Address; symbol: string; decimals: number }> = {
-  '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913': { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 },
-  '0xc78fAbC2cB5B9cf59E0Af3Da8E3Bc46d47753A4e': { address: '0xc78fAbC2cB5B9cf59E0Af3Da8E3Bc46d47753A4e', symbol: 'OSO', decimals: 18 },
-  '0x4200000000000000000000000000000000000006': { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
+const KNOWN_TOKENS_LIST = [
+  { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as Address, symbol: 'USDC', decimals: 6 },
+  { address: '0xc78fAbC2cB5B9cf59E0Af3Da8E3Bc46d47753A4e' as Address, symbol: 'OSO', decimals: 18 },
+  { address: '0x4200000000000000000000000000000000000006' as Address, symbol: 'WETH', decimals: 18 },
+]
+
+function findKnownToken(addr: string) {
+  return KNOWN_TOKENS_LIST.find(t => t.address.toLowerCase() === addr.toLowerCase())
 }
 
 export default function StandaloneRedeem() {
@@ -207,8 +211,7 @@ export default function StandaloneRedeem() {
       const sourceTokenAddress = ('0x' + erc20PeriodCaveat.terms.slice(2, 42)) as Address
 
       // Get decimals
-      const knownToken = KNOWN_TOKENS[sourceTokenAddress.toLowerCase() as keyof typeof KNOWN_TOKENS] ||
-                         KNOWN_TOKENS[sourceTokenAddress as keyof typeof KNOWN_TOKENS]
+      const knownToken = findKnownToken(sourceTokenAddress)
       const decimals = knownToken?.decimals || 18
       const sourceAmount = parseUnits(swapForm.sourceAmount, decimals).toString()
 
@@ -725,12 +728,12 @@ export default function StandaloneRedeem() {
                 <div>
                   <label className="text-sm text-gray-400 block mb-1">Destination Token Address</label>
                   <div className="grid grid-cols-3 gap-2 mb-2">
-                    {Object.entries(KNOWN_TOKENS).map(([addr, token]) => (
+                    {KNOWN_TOKENS_LIST.map((token) => (
                       <button
-                        key={addr}
-                        onClick={() => setSwapForm(prev => ({ ...prev, destinationToken: addr }))}
+                        key={token.address}
+                        onClick={() => setSwapForm(prev => ({ ...prev, destinationToken: token.address }))}
                         className={`p-2 rounded-lg border text-center text-xs transition-colors ${
-                          swapForm.destinationToken.toLowerCase() === addr.toLowerCase()
+                          swapForm.destinationToken.toLowerCase() === token.address.toLowerCase()
                             ? 'border-amber-500/50 bg-amber-500/10'
                             : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
                         }`}
