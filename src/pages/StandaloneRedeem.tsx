@@ -784,9 +784,9 @@ export default function StandaloneRedeem() {
                             }
                           </span>
                         </div>
-                        {quote.error && (
+                        {quote.error ? (
                           <div className="text-xs text-red-400 mt-1">{String(quote.error)}</div>
-                        )}
+                        ) : null}
                       </button>
                     ))}
                   </div>
