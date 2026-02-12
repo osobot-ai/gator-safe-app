@@ -354,11 +354,33 @@ export default function StandaloneRedeem() {
         data: swapCalldata,
       })
 
+      // Wait for receipt and check if tx actually succeeded
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      if (receipt.status === 'reverted') {
+        throw new Error(`Transaction reverted. The swap may have expired or the aggregator route failed. Try fetching a fresh quote and executing quickly. TX: ${tx}`)
+      }
+
       setTxHash(tx)
       setExecuted(true)
     } catch (err: unknown) {
       console.error('Swap redemption failed:', err)
-      setError(err instanceof Error ? err.message : 'Failed to execute swap redemption')
+      // Parse revert data if available
+      const errObj = err as any
+      let message = err instanceof Error ? err.message : 'Failed to execute swap redemption'
+      if (errObj?.data?.data) {
+        try {
+          const revertData = errObj.data.data as string
+          // Try to decode string from revert data (AdapterError(string) pattern)
+          if (revertData.length > 10) {
+            const hexStr = revertData.slice(138).replace(/0+$/, '')
+            const decoded = hexStr.match(/.{1,2}/g)?.map(b => String.fromCharCode(parseInt(b, 16))).join('') || ''
+            if (decoded) message = `Swap failed: ${decoded} adapter error. Try a fresh quote.`
+          }
+        } catch {
+          // Fall through to generic message
+        }
+      }
+      setError(message)
     } finally {
       setExecuting(false)
     }
@@ -443,6 +465,11 @@ export default function StandaloneRedeem() {
         to: addresses.delegationManager,
         data: redeemCalldata,
       })
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      if (receipt.status === 'reverted') {
+        throw new Error(`Transaction reverted. TX: ${tx}`)
+      }
 
       setTxHash(tx)
       setExecuted(true)
