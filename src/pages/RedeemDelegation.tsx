@@ -7,15 +7,11 @@ import {
   parseEther, 
   parseUnits,
   encodeFunctionData,
-  encodePacked,
-  encodeAbiParameters,
   erc20Abi,
-  createPublicClient,
-  http,
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { DelegationManager } from '@metamask/smart-accounts-kit/contracts'
-import { ExecutionMode, createExecution, ROOT_AUTHORITY } from '@metamask/smart-accounts-kit'
+import { ExecutionMode, createExecution } from '@metamask/smart-accounts-kit'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { getEnvironment } from '../lib/environment'
 import { getAddresses } from '../config/addresses'
@@ -229,7 +225,6 @@ export default function RedeemDelegation() {
       if (!chain) throw new Error(`Unsupported chain: ${safe.chainId}`)
       
       const addrs = getAddresses(safe.chainId)
-      const environment = getEnvironment(safe.chainId)
 
       // Step 1: Create a redelegation from us (the delegate) to the DelegationMetaSwapAdapter
       // The original delegation: delegator → us (delegate)
