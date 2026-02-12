@@ -2,7 +2,7 @@ import { type Web3AuthContextConfig } from '@web3auth/modal/react'
 import { WEB3AUTH_NETWORK, type Web3AuthOptions } from '@web3auth/modal'
 
 const web3AuthOptions: Web3AuthOptions = {
-  clientId: 'BPBZ2TqE24w4i58xfnvhVdsUdITRboguXoNgm_rV5rL8POt2gs3irhrfr1BTf3fsqOeNqdYPolDTL_ep7_uFgDg',
+  clientId: import.meta.env.VITE_WEB3AUTH_CLIENT_ID || '',
   web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
 }
 
