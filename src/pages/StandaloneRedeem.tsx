@@ -260,7 +260,7 @@ export default function StandaloneRedeem() {
       {/* Disclaimer */}
       <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 mb-4 max-w-2xl mx-auto">
         <p className="text-xs text-amber-400/80 text-center">
-          ⚠️ This app was built by an AI agent. It is experimental and unaudited. Use at your own risk.
+          ⚠️ This app was built by an AI agent (<a href="https://x.com/Osobotai" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-300">Osobot</a>). The smart contracts are all audited, but this app was made by an AI agent bro — use at your own risk.
         </p>
       </div>
 
