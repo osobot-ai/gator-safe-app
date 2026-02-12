@@ -13,6 +13,8 @@ export interface ChainAddresses {
   allowedTargetsEnforcer: Address
   allowedMethodsEnforcer: Address
   limitedCallsEnforcer: Address
+  argsEqualityCheckEnforcer: Address
+  delegationMetaSwapAdapter: Address
 }
 
 // DelegationManager from the Delegation Framework v1.3.0
@@ -31,6 +33,8 @@ const SHARED_ENFORCERS = {
   allowedTargetsEnforcer: '0x7F20f61b1f09b08D970938F6fa563634d65c4EeB' as Address,
   allowedMethodsEnforcer: '0x2c21fD0Cb9DC8445CB3fb0DC5E7Bb0Aca01842B5' as Address,
   limitedCallsEnforcer: '0x04658B29F6b82ed55274221a06Fc97D318E25416' as Address,
+  argsEqualityCheckEnforcer: '0x44b8c6aE3C304213C3e298495E12497eD3e56e41' as Address,
+  delegationMetaSwapAdapter: '0x5e4b49156D23D890e7DC264c378a443C2d22A80E' as Address,
 }
 
 export const addresses: Record<number, ChainAddresses> = {
