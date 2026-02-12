@@ -2,3 +2,4 @@ node_modules
 dist
 .env
 test/deployment.json
+.vercel

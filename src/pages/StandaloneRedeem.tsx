@@ -581,7 +581,7 @@ export default function StandaloneRedeem() {
                 disabled={web3authLoading}
                 className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black font-semibold px-6 py-3 rounded-lg transition-colors w-full max-w-xs"
               >
-                {web3authLoading ? 'Connecting...' : '🔐 Use Embedded Wallet'}
+                {web3authLoading ? 'Connecting...' : 'Connect'}
               </button>
               <p className="text-xs text-gray-500">Sign in with Google, email, or social accounts — no extension needed</p>
             </div>
