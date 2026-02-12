@@ -56,8 +56,25 @@ export default function Delegations() {
     }
   }
 
-  function copyDelegation(d: StoredDelegation) {
-    navigator.clipboard.writeText(JSON.stringify(d, null, 2))
+  const [copied, setCopied] = useState<string | null>(null)
+
+  async function copyDelegation(d: StoredDelegation) {
+    const text = JSON.stringify(d, null, 2)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Fallback for iframe/non-secure contexts
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    setCopied(d.meta.delegationHash)
+    setTimeout(() => setCopied(null), 2000)
   }
 
   if (delegations.length === 0) {
@@ -144,7 +161,7 @@ export default function Delegations() {
               onClick={() => copyDelegation(d)}
               className="text-xs bg-white/5 hover:bg-white/10 text-gray-300 px-3 py-1.5 rounded-lg transition-colors"
             >
-              📋 Copy
+              {copied === d.meta.delegationHash ? '✅ Copied!' : '📋 Copy'}
             </button>
             {d.meta.status === 'signed' && (
               <button

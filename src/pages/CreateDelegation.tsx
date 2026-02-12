@@ -22,6 +22,20 @@ import { saveDelegation, type StoredDelegation } from '../lib/storage'
 
 type Step = 1 | 2 | 3 | 4
 type PermissionType = 'eth' | 'erc20'
+type TokenOption = 'usdc' | 'oso' | 'custom'
+
+const KNOWN_TOKENS: Record<string, { address: Address; decimals: number; symbol: string }> = {
+  usdc: {
+    address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    decimals: 6,
+    symbol: 'USDC',
+  },
+  oso: {
+    address: '0xc78fabc2cb5b9cf59e0af3da8e3bc46d47753a4e',
+    decimals: 18,
+    symbol: 'OSO',
+  },
+}
 
 const chains: Record<number, (typeof baseSepolia) | (typeof base)> = {
   84532: baseSepolia,
@@ -38,8 +52,17 @@ export default function CreateDelegation() {
   // Step 3 - Limits
   const [amount, setAmount] = useState('')
   const [period, setPeriod] = useState<PeriodType>('daily')
-  const [tokenAddress, setTokenAddress] = useState('')
-  const [tokenDecimals, setTokenDecimals] = useState(18)
+  const [tokenOption, setTokenOption] = useState<TokenOption>('usdc')
+  const [customTokenAddress, setCustomTokenAddress] = useState('')
+  const [customTokenDecimals, setCustomTokenDecimals] = useState(18)
+
+  // Derived token values
+  const tokenAddress = tokenOption === 'custom'
+    ? customTokenAddress
+    : KNOWN_TOKENS[tokenOption]?.address || ''
+  const tokenDecimals = tokenOption === 'custom'
+    ? customTokenDecimals
+    : KNOWN_TOKENS[tokenOption]?.decimals || 18
   const [expiryEnabled, setExpiryEnabled] = useState(false)
   const [expiryDate, setExpiryDate] = useState('')
 
@@ -157,7 +180,7 @@ export default function CreateDelegation() {
         meta: {
           label: permType === 'eth'
             ? `${amount} ETH ${periodLabel(period)}`
-            : `${amount} tokens ${periodLabel(period)}`,
+            : `${amount} ${tokenOption !== 'custom' ? KNOWN_TOKENS[tokenOption]?.symbol : 'tokens'} ${periodLabel(period)}`,
           scopeType: permType === 'eth' ? 'ethSpendingLimit' : 'erc20SpendingLimit',
           createdAt: new Date().toISOString(),
           chainId: safe.chainId,
@@ -183,9 +206,25 @@ export default function CreateDelegation() {
     }
   }
 
-  function copyToClipboard() {
+  const [copiedCreate, setCopiedCreate] = useState(false)
+
+  async function copyToClipboard() {
     if (!signedDelegation) return
-    navigator.clipboard.writeText(JSON.stringify(signedDelegation, null, 2))
+    const text = JSON.stringify(signedDelegation, null, 2)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    setCopiedCreate(true)
+    setTimeout(() => setCopiedCreate(false), 2000)
   }
 
   function downloadJson() {
@@ -234,7 +273,7 @@ export default function CreateDelegation() {
               onClick={copyToClipboard}
               className="bg-white/10 hover:bg-white/15 text-white px-4 py-2 rounded-lg text-sm transition-colors"
             >
-              📋 Copy JSON
+              {copiedCreate ? '✅ Copied!' : '📋 Copy JSON'}
             </button>
             <button
               onClick={downloadJson}
@@ -353,27 +392,81 @@ export default function CreateDelegation() {
           <h2 className="text-lg font-semibold text-white">Configure Limits</h2>
 
           {permType === 'erc20' && (
-            <div>
-              <label className="text-sm text-gray-400 block mb-1">Token Address</label>
-              <input
-                type="text"
-                placeholder="0x..."
-                value={tokenAddress}
-                onChange={(e) => setTokenAddress(e.target.value)}
-              />
-              {tokenAddress && !isAddress(tokenAddress) && (
-                <p className="text-xs text-red-400 mt-1">Invalid token address</p>
-              )}
-              <div className="mt-2">
-                <label className="text-sm text-gray-400 block mb-1">Token Decimals</label>
-                <input
-                  type="number"
-                  value={tokenDecimals}
-                  onChange={(e) => setTokenDecimals(parseInt(e.target.value) || 18)}
-                  min={0}
-                  max={24}
-                />
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400 block mb-2">Select Token</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setTokenOption('usdc')}
+                    className={`p-3 rounded-lg border text-center transition-colors ${
+                      tokenOption === 'usdc'
+                        ? 'border-amber-500/50 bg-amber-500/10'
+                        : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">💵</div>
+                    <div className="text-sm font-medium text-white">USDC</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">6 decimals</div>
+                  </button>
+                  <button
+                    onClick={() => setTokenOption('oso')}
+                    className={`p-3 rounded-lg border text-center transition-colors ${
+                      tokenOption === 'oso'
+                        ? 'border-amber-500/50 bg-amber-500/10'
+                        : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">🐻</div>
+                    <div className="text-sm font-medium text-white">OSO</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">18 decimals</div>
+                  </button>
+                  <button
+                    onClick={() => setTokenOption('custom')}
+                    className={`p-3 rounded-lg border text-center transition-colors ${
+                      tokenOption === 'custom'
+                        ? 'border-amber-500/50 bg-amber-500/10'
+                        : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">⚙️</div>
+                    <div className="text-sm font-medium text-white">Custom</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">Any ERC-20</div>
+                  </button>
+                </div>
               </div>
+
+              {tokenOption === 'custom' && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-sm text-gray-400 block mb-1">Token Address</label>
+                    <input
+                      type="text"
+                      placeholder="0x..."
+                      value={customTokenAddress}
+                      onChange={(e) => setCustomTokenAddress(e.target.value)}
+                    />
+                    {customTokenAddress && !isAddress(customTokenAddress) && (
+                      <p className="text-xs text-red-400 mt-1">Invalid token address</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-400 block mb-1">Token Decimals</label>
+                    <input
+                      type="number"
+                      value={customTokenDecimals}
+                      onChange={(e) => setCustomTokenDecimals(parseInt(e.target.value) || 18)}
+                      min={0}
+                      max={24}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {tokenOption !== 'custom' && (
+                <div className="bg-white/5 rounded-lg p-2 text-xs text-gray-400 font-mono">
+                  {KNOWN_TOKENS[tokenOption]?.address}
+                </div>
+              )}
             </div>
           )}
 
@@ -448,13 +541,15 @@ export default function CreateDelegation() {
             <div className="flex justify-between">
               <span className="text-gray-500">Amount</span>
               <span className="text-gray-300">
-                {amount} {permType === 'eth' ? 'ETH' : 'tokens'} {periodLabel(period)}
+                {amount} {permType === 'eth' ? 'ETH' : (tokenOption !== 'custom' ? KNOWN_TOKENS[tokenOption]?.symbol : 'tokens')} {periodLabel(period)}
               </span>
             </div>
             {permType === 'erc20' && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Token</span>
-                <span className="text-gray-300 font-mono text-xs">{tokenAddress}</span>
+                <span className="text-gray-300 font-mono text-xs">
+                  {tokenOption !== 'custom' ? `${KNOWN_TOKENS[tokenOption]?.symbol} — ` : ''}{tokenAddress}
+                </span>
               </div>
             )}
             {expiryEnabled && expiryDate && (
