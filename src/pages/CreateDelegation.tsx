@@ -32,7 +32,7 @@ const KNOWN_TOKENS: Record<string, { address: Address; decimals: number; symbol:
     symbol: 'USDC',
   },
   oso: {
-    address: '0xc78fabc2cb5b9cf59e0af3da8e3bc46d47753a4e',
+    address: '0xc78fAbC2cB5B9cf59E0Af3Da8E3Bc46d47753A4e',
     decimals: 18,
     symbol: 'OSO',
   },

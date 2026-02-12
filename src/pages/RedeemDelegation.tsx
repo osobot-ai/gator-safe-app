@@ -100,7 +100,7 @@ interface SwapTrade {
 
 const KNOWN_TOKENS: Record<string, { address: Address; symbol: string; decimals: number }> = {
   '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913': { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 },
-  '0xc78fabc2cb5b9cf59e0af3da8e3bc46d47753a4e': { address: '0xc78fabc2cb5b9cf59e0af3da8e3bc46d47753a4e', symbol: 'OSO', decimals: 18 },
+  '0xc78fAbC2cB5B9cf59E0Af3Da8E3Bc46d47753A4e': { address: '0xc78fAbC2cB5B9cf59E0Af3Da8E3Bc46d47753A4e', symbol: 'OSO', decimals: 18 },
   '0x4200000000000000000000000000000000000006': { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
 }
 
