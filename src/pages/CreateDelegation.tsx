@@ -316,10 +316,11 @@ export default function CreateDelegation() {
 
       } else if (category === 'swapIntent') {
         // === SWAP INTENT ===
-        // Delegate is the DelegationMetaSwapAdapter
+        // Delegate is the user-chosen delegate (same as other delegation types)
         // Caveats:
         // 1. ArgsEqualityCheckEnforcer with "Token-Whitelist-Not-Enforced" (MUST be first)
         // 2. ERC20PeriodTransferEnforcer (limits how much source token can be swapped per period)
+        // 3. RedeemerEnforcer — only the DelegationMetaSwapAdapter can redeem
 
         const swapSourceAddr = getTokenAddress(swapSourceToken, swapSourceCustomAddress) as Address
         const swapSourceDec = getTokenDecimals(swapSourceToken, swapSourceCustomDecimals)
@@ -350,11 +351,17 @@ export default function CreateDelegation() {
           ),
         })
 
-        // Build delegation with DelegationMetaSwapAdapter as delegate
+        // 3. RedeemerEnforcer — only the DelegationMetaSwapAdapter can redeem
+        caveats.push({
+          enforcer: addrs.redeemerEnforcer,
+          terms: encodePacked(['address'], [addrs.delegationMetaSwapAdapter]),
+        })
+
+        // Build delegation with user-chosen delegate (same pattern as other delegation types)
         const { ROOT_AUTHORITY: ROOT_AUTH_SWAP } = await import('@metamask/smart-accounts-kit')
 
         sdkDelegation = {
-          delegate: addrs.delegationMetaSwapAdapter,
+          delegate: delegate as Address,
           delegator: moduleAddress,
           authority: ROOT_AUTH_SWAP,
           caveats: caveats.map(c => ({
@@ -1080,7 +1087,7 @@ export default function CreateDelegation() {
               <>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Delegate</span>
-                  <span className="text-gray-300 font-mono text-xs">MetaSwap Adapter</span>
+                  <span className="text-gray-300 font-mono text-xs">{delegate}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">📤 Source Token</span>
@@ -1105,7 +1112,7 @@ export default function CreateDelegation() {
 
           {category === 'swapIntent' && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
-              💱 This delegation allows the DelegationMetaSwapAdapter to swap up to {swapAmount} {getTokenSymbol(swapSourceToken)} {periodLabel(swapPeriod)} into {getTokenSymbol(swapDestToken)} via MetaSwap. The adapter is the delegate — it will execute swaps on behalf of your Safe.
+              💱 This delegation allows the delegate to swap up to {swapAmount} {getTokenSymbol(swapSourceToken)} {periodLabel(swapPeriod)} into {getTokenSymbol(swapDestToken)} via MetaSwap. Only the DelegationMetaSwapAdapter can redeem the delegation (enforced by RedeemerEnforcer). The delegate redelegates to the adapter to execute swaps.
             </div>
           )}
 
