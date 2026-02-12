@@ -3,7 +3,10 @@ import ReactDOM from 'react-dom/client'
 import SafeProvider from '@safe-global/safe-apps-react-sdk'
 import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Web3AuthProvider } from '@web3auth/modal/react'
+import { WagmiProvider as Web3AuthWagmiProvider } from '@web3auth/modal/react/wagmi'
 import { wagmiConfig } from './config/chains'
+import web3AuthContextConfig from './web3authContext'
 import App from './App'
 import StandaloneRedeem from './pages/StandaloneRedeem'
 import './index.css'
@@ -15,11 +18,17 @@ const isStandalone = window.location.pathname === '/redeem'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        {isStandalone ? (
-          <StandaloneRedeem />
-        ) : (
+    {isStandalone ? (
+      <Web3AuthProvider config={web3AuthContextConfig}>
+        <Web3AuthWagmiProvider>
+          <QueryClientProvider client={queryClient}>
+            <StandaloneRedeem />
+          </QueryClientProvider>
+        </Web3AuthWagmiProvider>
+      </Web3AuthProvider>
+    ) : (
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
           <SafeProvider
             loader={
               <div className="flex items-center justify-center min-h-screen bg-[#0c0c0c]">
@@ -32,8 +41,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           >
             <App />
           </SafeProvider>
-        )}
-      </QueryClientProvider>
-    </WagmiProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    )}
   </React.StrictMode>,
 )

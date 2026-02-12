@@ -12,6 +12,9 @@ export default defineConfig({
       'Access-Control-Allow-Headers': '*',
     },
   },
+  define: {
+    global: 'globalThis',
+  },
   // Required for Safe App iframe communication
   build: {
     sourcemap: true,

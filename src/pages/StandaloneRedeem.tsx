@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { 
   useAccount, 
-  useConnect, 
   useDisconnect, 
   useWalletClient, 
   usePublicClient,
   useChainId 
 } from 'wagmi'
-import { injected } from 'wagmi/connectors'
+import { useWeb3AuthConnect } from '@web3auth/modal/react'
 import { 
   type Address, 
   type Hex, 
@@ -110,7 +109,7 @@ function findKnownToken(addr: string) {
 
 export default function StandaloneRedeem() {
   const { address, isConnected } = useAccount()
-  const { connect } = useConnect()
+  const { connect: web3authConnect, loading: web3authLoading } = useWeb3AuthConnect()
   const { disconnect } = useDisconnect()
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient()
@@ -575,14 +574,16 @@ export default function StandaloneRedeem() {
         {/* Wallet Connection */}
         <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02]">
           {!isConnected ? (
-            <div className="text-center">
+            <div className="text-center space-y-3">
               <h3 className="text-lg font-medium text-white mb-4">Connect Your Wallet</h3>
               <button
-                onClick={() => connect({ connector: injected() })}
-                className="bg-amber-500 hover:bg-amber-600 text-black font-semibold px-6 py-3 rounded-lg transition-colors"
+                onClick={() => web3authConnect()}
+                disabled={web3authLoading}
+                className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-black font-semibold px-6 py-3 rounded-lg transition-colors w-full max-w-xs"
               >
-                Connect MetaMask
+                {web3authLoading ? 'Connecting...' : '🔐 Use Embedded Wallet'}
               </button>
+              <p className="text-xs text-gray-500">Sign in with Google, email, or social accounts — no extension needed</p>
             </div>
           ) : (
             <div className="flex items-center justify-between">
