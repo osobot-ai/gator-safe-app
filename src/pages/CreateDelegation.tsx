@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, type Address, type Hex, isAddress, parseEther, parseUnits, encodePacked } from 'viem'
+import { createPublicClient, http, type Address, type Hex, isAddress, parseEther, parseUnits, encodePacked, encodeAbiParameters } from 'viem'
 import { baseSepolia, base } from 'viem/chains'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
@@ -21,7 +21,7 @@ import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
 
 type Step = 1 | 2 | 3 | 4 | 5
-type PermissionCategory = 'spendingLimit' | 'transferIntent'
+type PermissionCategory = 'spendingLimit' | 'transferIntent' | 'swapIntent'
 type PermissionType = 'eth' | 'erc20'
 type TokenOption = 'usdc' | 'oso' | 'custom'
 
@@ -179,6 +179,16 @@ export default function CreateDelegation() {
   const [receiveCustomDecimals, setReceiveCustomDecimals] = useState(18)
   const [receiveAmount, setReceiveAmount] = useState('')
 
+  // Step 3 - Swap Intent
+  const [swapSourceToken, setSwapSourceToken] = useState<TokenOption>('usdc')
+  const [swapSourceCustomAddress, setSwapSourceCustomAddress] = useState('')
+  const [swapSourceCustomDecimals, setSwapSourceCustomDecimals] = useState(18)
+  const [swapDestToken, setSwapDestToken] = useState<TokenOption>('oso')
+  const [swapDestCustomAddress, setSwapDestCustomAddress] = useState('')
+  const [swapDestCustomDecimals, setSwapDestCustomDecimals] = useState(18)
+  const [swapAmount, setSwapAmount] = useState('')
+  const [swapPeriod, setSwapPeriod] = useState<PeriodType>('daily')
+
   // UI state
   const [step, setStep] = useState<Step>(1)
   const [signing, setSigning] = useState(false)
@@ -194,6 +204,7 @@ export default function CreateDelegation() {
   // Total steps depends on category
   const totalSteps = category === 'spendingLimit' ? 5 : 4
   const reviewStep = category === 'spendingLimit' ? 5 : 4
+  // swapIntent and transferIntent both use 4 steps
   // configStep not used directly but kept for reference
 
   function canProceed(): boolean {
@@ -204,6 +215,12 @@ export default function CreateDelegation() {
         return true
       case 3:
         if (category === 'spendingLimit') return true // This is just type selection
+        if (category === 'swapIntent') {
+          if (!swapAmount || parseFloat(swapAmount) <= 0) return false
+          if (!isAddress(getTokenAddress(swapSourceToken, swapSourceCustomAddress))) return false
+          if (!isAddress(getTokenAddress(swapDestToken, swapDestCustomAddress))) return false
+          return true
+        }
         // Transfer intent config
         if (!sendAmount || parseFloat(sendAmount) <= 0) return false
         if (!receiveAmount || parseFloat(receiveAmount) <= 0) return false
@@ -251,7 +268,7 @@ export default function CreateDelegation() {
 
       let sdkDelegation: any
       let metaLabel: string
-      let scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent'
+      let scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent'
 
       if (category === 'spendingLimit') {
         // === SPENDING LIMIT ===
@@ -296,6 +313,70 @@ export default function CreateDelegation() {
           ? `${amount} ETH ${periodLabel(period)}`
           : `${amount} ${getTokenSymbol(tokenOption)} ${periodLabel(period)}`
         scopeType = permType === 'eth' ? 'ethSpendingLimit' : 'erc20SpendingLimit'
+
+      } else if (category === 'swapIntent') {
+        // === SWAP INTENT ===
+        // Delegate is the user-chosen delegate (same as other delegation types)
+        // Caveats:
+        // 1. ArgsEqualityCheckEnforcer with "Token-Whitelist-Not-Enforced" (MUST be first)
+        // 2. ERC20PeriodTransferEnforcer (limits how much source token can be swapped per period)
+        // 3. RedeemerEnforcer — only the DelegationMetaSwapAdapter can redeem
+
+        const swapSourceAddr = getTokenAddress(swapSourceToken, swapSourceCustomAddress) as Address
+        const swapSourceDec = getTokenDecimals(swapSourceToken, swapSourceCustomDecimals)
+
+        const caveats: Array<{enforcer: Address; terms: Hex}> = []
+
+        // 1. ArgsEqualityCheckEnforcer — MUST be first caveat
+        // terms = abi.encode("Token-Whitelist-Not-Enforced")
+        const whitelistTerms = encodeAbiParameters(
+          [{ type: 'string' }],
+          ['Token-Whitelist-Not-Enforced']
+        ) as Hex
+        caveats.push({
+          enforcer: addrs.argsEqualityCheckEnforcer,
+          terms: whitelistTerms,
+        })
+
+        // 2. ERC20PeriodTransferEnforcer — limits source token spending per period
+        const swapAmountUnits = parseUnits(swapAmount, swapSourceDec)
+        const swapPeriodSeconds = periodToSeconds(swapPeriod)
+        const swapStartDate = BigInt(now)
+
+        caveats.push({
+          enforcer: addrs.erc20PeriodTransferEnforcer,
+          terms: encodePacked(
+            ['address', 'uint256', 'uint256', 'uint256'],
+            [swapSourceAddr, swapAmountUnits, swapPeriodSeconds, swapStartDate]
+          ),
+        })
+
+        // 3. RedeemerEnforcer — only the DelegationMetaSwapAdapter can redeem
+        caveats.push({
+          enforcer: addrs.redeemerEnforcer,
+          terms: encodePacked(['address'], [addrs.delegationMetaSwapAdapter]),
+        })
+
+        // Build delegation with user-chosen delegate (same pattern as other delegation types)
+        const { ROOT_AUTHORITY: ROOT_AUTH_SWAP } = await import('@metamask/smart-accounts-kit')
+
+        sdkDelegation = {
+          delegate: delegate as Address,
+          delegator: moduleAddress,
+          authority: ROOT_AUTH_SWAP,
+          caveats: caveats.map(c => ({
+            enforcer: c.enforcer,
+            terms: c.terms,
+            args: '0x' as Hex,
+          })),
+          salt: salt,
+          signature: '0x' as Hex,
+        }
+
+        const srcSymbol = getTokenSymbol(swapSourceToken)
+        const dstSymbol = getTokenSymbol(swapDestToken)
+        metaLabel = `Swap: ${swapAmount} ${srcSymbol} ${periodLabel(swapPeriod)} → ${dstSymbol}`
+        scopeType = 'swapIntent'
 
       } else {
         // === TRANSFER INTENT ===
@@ -404,8 +485,8 @@ export default function CreateDelegation() {
           moduleAddress,
           status: 'signed',
           delegationHash,
-          amount: category === 'spendingLimit' ? amount : sendAmount,
-          period: category === 'spendingLimit' ? period : undefined,
+          amount: category === 'spendingLimit' ? amount : category === 'swapIntent' ? swapAmount : sendAmount,
+          period: category === 'spendingLimit' ? period : category === 'swapIntent' ? swapPeriod : undefined,
           tokenAddress: category === 'spendingLimit'
             ? (permType === 'erc20' ? (tokenAddress as Address) : undefined)
             : undefined,
@@ -506,6 +587,7 @@ export default function CreateDelegation() {
                 setAmount('')
                 setSendAmount('')
                 setReceiveAmount('')
+                setSwapAmount('')
               }}
               className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-4 py-2 rounded-lg text-sm transition-colors"
             >
@@ -525,6 +607,9 @@ export default function CreateDelegation() {
       if (s === 3) return 'Asset Type'
       if (s === 4) return 'Configure'
       if (s === 5) return 'Review & Sign'
+    } else if (category === 'swapIntent') {
+      if (s === 3) return 'Configure Swap'
+      if (s === 4) return 'Review & Sign'
     } else {
       if (s === 3) return 'Configure Intent'
       if (s === 4) return 'Review & Sign'
@@ -587,7 +672,7 @@ export default function CreateDelegation() {
         <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
           <h2 className="text-lg font-semibold text-white">Permission Category</h2>
           <p className="text-sm text-gray-400">What kind of permission do you want to create?</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button
               onClick={() => setCategory('spendingLimit')}
               className={`p-5 rounded-lg border text-left transition-colors ${
@@ -614,6 +699,20 @@ export default function CreateDelegation() {
               <div className="font-medium text-white">Transfer Intent</div>
               <div className="text-xs text-gray-400 mt-1">
                 Allow transfers out only if you receive tokens in return
+              </div>
+            </button>
+            <button
+              onClick={() => setCategory('swapIntent')}
+              className={`p-5 rounded-lg border text-left transition-colors ${
+                category === 'swapIntent'
+                  ? 'border-amber-500/50 bg-amber-500/10'
+                  : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+              }`}
+            >
+              <div className="text-2xl mb-2">💱</div>
+              <div className="font-medium text-white">Swap Intent</div>
+              <div className="text-xs text-gray-400 mt-1">
+                Allow periodic token swaps via MetaSwap adapter
               </div>
             </button>
           </div>
@@ -831,6 +930,79 @@ export default function CreateDelegation() {
         </div>
       )}
 
+      {/* Step 3 (Swap Intent): Configure Swap */}
+      {step === 3 && category === 'swapIntent' && (
+        <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-6">
+          <h2 className="text-lg font-semibold text-white">Configure Swap Intent</h2>
+          <p className="text-sm text-gray-400">
+            Allow the MetaSwap adapter to swap tokens on your behalf, with periodic spending limits.
+          </p>
+
+          {/* Source Token */}
+          <div className="border border-white/10 rounded-lg p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-red-400 text-sm font-medium">📤 Source Token (what you spend)</span>
+            </div>
+            <TokenSelector
+              selected={swapSourceToken}
+              onSelect={setSwapSourceToken}
+              customAddress={swapSourceCustomAddress}
+              onCustomAddressChange={setSwapSourceCustomAddress}
+              customDecimals={swapSourceCustomDecimals}
+              onCustomDecimalsChange={setSwapSourceCustomDecimals}
+              label="Token to swap from"
+            />
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">
+                Amount per period ({getTokenSymbol(swapSourceToken)})
+              </label>
+              <input
+                type="number"
+                placeholder="100"
+                value={swapAmount}
+                onChange={(e) => setSwapAmount(e.target.value)}
+                min={0}
+                step="any"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">Period</label>
+              <select value={swapPeriod} onChange={(e) => setSwapPeriod(e.target.value as PeriodType)}>
+                <option value="hourly">Hourly</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Arrow */}
+          <div className="flex justify-center">
+            <div className="text-2xl text-gray-500">⇅</div>
+          </div>
+
+          {/* Destination Token */}
+          <div className="border border-green-500/20 rounded-lg p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-green-400 text-sm font-medium">📥 Destination Token (what you receive)</span>
+            </div>
+            <TokenSelector
+              selected={swapDestToken}
+              onSelect={setSwapDestToken}
+              customAddress={swapDestCustomAddress}
+              onCustomAddressChange={setSwapDestCustomAddress}
+              customDecimals={swapDestCustomDecimals}
+              onCustomDecimalsChange={setSwapDestCustomDecimals}
+              label="Token to swap to"
+            />
+          </div>
+
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+            ℹ️ This delegation allows the DelegationMetaSwapAdapter to swap up to {swapAmount || '0'} {getTokenSymbol(swapSourceToken)} {periodLabel(swapPeriod)} into {getTokenSymbol(swapDestToken)} via MetaSwap. The adapter handles the swap execution and returns the output tokens to your Safe.
+          </div>
+        </div>
+      )}
+
       {/* Review Step (Spending Limit: step 5, Transfer Intent: step 4) */}
       {step === reviewStep && (
         <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
@@ -844,7 +1016,7 @@ export default function CreateDelegation() {
             <div className="flex justify-between">
               <span className="text-gray-500">Category</span>
               <span className="text-gray-300">
-                {category === 'spendingLimit' ? '💰 Spending Limit' : '🔄 Transfer Intent'}
+                {category === 'spendingLimit' ? '💰 Spending Limit' : category === 'swapIntent' ? '💱 Swap Intent' : '🔄 Transfer Intent'}
               </span>
             </div>
 
@@ -910,6 +1082,39 @@ export default function CreateDelegation() {
               </>
             )}
           </div>
+
+          {category === 'swapIntent' && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Delegate</span>
+                  <span className="text-gray-300 font-mono text-xs">{delegate}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">📤 Source Token</span>
+                  <span className="text-gray-300">
+                    {getTokenSymbol(swapSourceToken)} — <span className="font-mono text-xs">{getTokenAddress(swapSourceToken, swapSourceCustomAddress)}</span>
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">📥 Destination Token</span>
+                  <span className="text-gray-300">
+                    {getTokenSymbol(swapDestToken)} — <span className="font-mono text-xs">{getTokenAddress(swapDestToken, swapDestCustomAddress)}</span>
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Swap Limit</span>
+                  <span className="text-gray-300">
+                    {swapAmount} {getTokenSymbol(swapSourceToken)} {periodLabel(swapPeriod)}
+                  </span>
+                </div>
+              </>
+            )}
+
+          {category === 'swapIntent' && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
+              💱 This delegation allows the delegate to swap up to {swapAmount} {getTokenSymbol(swapSourceToken)} {periodLabel(swapPeriod)} into {getTokenSymbol(swapDestToken)} via MetaSwap. Only the DelegationMetaSwapAdapter can redeem the delegation (enforced by RedeemerEnforcer). The delegate redelegates to the adapter to execute swaps.
+            </div>
+          )}
 
           {category === 'transferIntent' && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
