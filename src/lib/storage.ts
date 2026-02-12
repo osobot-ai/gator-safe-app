@@ -16,7 +16,7 @@ export interface StoredDelegation {
   }
   meta: {
     label: string
-    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit'
+    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent'
     createdAt: string
     chainId: number
     safeAddress: Address
