@@ -5,6 +5,9 @@ export interface ChainAddresses {
   delegatorModuleFactory: Address
   nativeTokenPeriodTransferEnforcer: Address
   erc20PeriodTransferEnforcer: Address
+  nativeTokenTransferAmountEnforcer: Address
+  erc20TransferAmountEnforcer: Address
+  erc20MultiOperationIncreaseBalanceEnforcer: Address
   valueLteEnforcer: Address
   timestampEnforcer: Address
   allowedTargetsEnforcer: Address
@@ -20,6 +23,9 @@ const DELEGATION_MANAGER: Address = '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3'
 const SHARED_ENFORCERS = {
   nativeTokenPeriodTransferEnforcer: '0x9BC0FAf4Aca5AE429F4c06aEEaC517520CB16BD9' as Address,
   erc20PeriodTransferEnforcer: '0x474e3Ae7E169e940607cC624Da8A15Eb120139aB' as Address,
+  nativeTokenTransferAmountEnforcer: '0xF71af580b9c3078fbc2BBF16FbB8EEd82b330320' as Address,
+  erc20TransferAmountEnforcer: '0xf100b0819427117EcF76Ed94B358B1A5b5C6D2Fc' as Address,
+  erc20MultiOperationIncreaseBalanceEnforcer: '0xeaa1be91f0ea417820a765df9c5be542286bffdc' as Address,
   valueLteEnforcer: '0x92Bf12322527cAA612fd31a0e810472BBB106A8F' as Address,
   timestampEnforcer: '0x1046bb45C8d673d4ea75321280DB34899413c069' as Address,
   allowedTargetsEnforcer: '0x7F20f61b1f09b08D970938F6fa563634d65c4EeB' as Address,
