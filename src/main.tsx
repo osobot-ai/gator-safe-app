@@ -20,11 +20,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {isStandalone ? (
       <Web3AuthProvider config={web3AuthContextConfig}>
-        <Web3AuthWagmiProvider>
-          <QueryClientProvider client={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <Web3AuthWagmiProvider>
             <StandaloneRedeem />
-          </QueryClientProvider>
-        </Web3AuthWagmiProvider>
+          </Web3AuthWagmiProvider>
+        </QueryClientProvider>
       </Web3AuthProvider>
     ) : (
       <WagmiProvider config={wagmiConfig}>
