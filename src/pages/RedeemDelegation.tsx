@@ -95,6 +95,8 @@ interface SwapTrade {
   approvalNeeded: any
   aggregator: string
   aggregatorType: string
+  sigExpiration: number
+  signature: string
   error: any
 }
 
@@ -308,8 +310,8 @@ export default function RedeemDelegation() {
         args: [
           {
             apiData: apiData,
-            expiration: BigInt(Math.floor(Date.now() / 1000) + 600), // 10 min expiry
-            signature: '0x' as Hex, // The API provides signed data
+            expiration: BigInt(selectedQuote.sigExpiration),
+            signature: selectedQuote.signature as Hex,
           },
           delegationChain,
           false, // _useTokenWhitelist = false (we use "Token-Whitelist-Not-Enforced")

@@ -94,6 +94,8 @@ interface SwapTrade {
   approvalNeeded: unknown
   aggregator: string
   aggregatorType: string
+  sigExpiration: number
+  signature: string
   error: unknown
 }
 
@@ -338,8 +340,8 @@ export default function StandaloneRedeem() {
         args: [
           {
             apiData: apiData,
-            expiration: BigInt(Math.floor(Date.now() / 1000) + 600),
-            signature: '0x' as Hex,
+            expiration: BigInt(selectedQuote.sigExpiration),
+            signature: selectedQuote.signature as Hex,
           },
           delegationChain,
           false,
