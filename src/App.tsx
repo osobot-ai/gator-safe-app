@@ -5,8 +5,9 @@ import CreateDelegation from './pages/CreateDelegation'
 import Delegations from './pages/Delegations'
 import ImportDelegation from './pages/ImportDelegation'
 import RedeemDelegation from './pages/RedeemDelegation'
+import ModuleTransfer from './pages/ModuleTransfer'
 
-type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem'
+type Page = 'home' | 'create' | 'delegations' | 'import' | 'redeem' | 'withdraw'
 
 function NavButton({
   active,
@@ -77,6 +78,9 @@ function AppInner() {
           <NavButton active={page === 'redeem'} onClick={() => setPage('redeem')}>
             Redeem
           </NavButton>
+          <NavButton active={page === 'withdraw'} onClick={() => setPage('withdraw')}>
+            Withdraw
+          </NavButton>
         </div>
       </nav>
 
@@ -87,6 +91,7 @@ function AppInner() {
         {page === 'delegations' && <Delegations />}
         {page === 'import' && <ImportDelegation />}
         {page === 'redeem' && <RedeemDelegation />}
+        {page === 'withdraw' && <ModuleTransfer />}
       </main>
     </div>
   )
