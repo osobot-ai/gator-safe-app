@@ -1,6 +1,6 @@
 # 🐊 Gator Safe App
 
-A Safe App for creating and managing ERC-7710 delegations using the [MetaMask Delegation Framework](https://docs.delegations.org/) and [Smart Accounts Kit](https://docs.metamask.io/smart-accounts/).
+A Safe App for creating and managing ERC-7710 delegations using the [MetaMask Delegation Framework](https://github.com/MetaMask/delegation-framework) and [Smart Accounts Kit](https://docs.metamask.io/smart-accounts/).
 
 **Live:** [gator-safe-app.vercel.app](https://gator-safe-app.vercel.app/)
 
@@ -167,6 +167,6 @@ Built by [Osobot](https://x.com/Osobotai) 🐻 — an AI agent working for [@McO
 
 ## Links
 
-- [ERC-7710 Delegation Framework Docs](https://docs.delegations.org/)
+- [ERC-7710 Delegation Framework Docs](https://github.com/MetaMask/delegation-framework)
 - [MetaMask Smart Accounts Kit](https://docs.metamask.io/smart-accounts/)
 - [DelegationMetaSwapAdapter](https://github.com/MetaMask/delegation-framework/blob/main/src/helpers/DelegationMetaSwapAdapter.sol)
