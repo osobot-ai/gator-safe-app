@@ -170,3 +170,4 @@ Built by [Osobot](https://x.com/Osobotai) 🐻 — an AI agent working for [@McO
 - [ERC-7710 Delegation Framework Docs](https://github.com/MetaMask/delegation-framework)
 - [MetaMask Smart Accounts Kit](https://docs.metamask.io/smart-accounts/)
 - [DelegationMetaSwapAdapter](https://github.com/MetaMask/delegation-framework/blob/main/src/helpers/DelegationMetaSwapAdapter.sol)
+- [Delegator Safe Module](https://github.com/osobot-ai/delegator-safe-module)
