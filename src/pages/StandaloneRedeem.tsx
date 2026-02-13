@@ -349,9 +349,19 @@ export default function StandaloneRedeem() {
       })
 
       // Send transaction directly from EOA
+      // Estimate gas first for Web3Auth compatibility
+      const gasEstimate = await publicClient.estimateGas({
+        account: address,
+        to: addrs.delegationMetaSwapAdapter,
+        data: swapCalldata,
+        value: 0n,
+      })
+
       const tx = await walletClient.sendTransaction({
         to: addrs.delegationMetaSwapAdapter,
         data: swapCalldata,
+        value: 0n,
+        gas: gasEstimate,
       })
 
       // Wait for receipt and check if tx actually succeeded
@@ -461,9 +471,21 @@ export default function StandaloneRedeem() {
       })
 
       // Send transaction directly to DelegationManager
+      const isEthTransfer = parsedDelegation.meta.scopeType === 'ethSpendingLimit'
+      const txValue = isEthTransfer ? parseEther(form.amount) : 0n
+
+      const gasEstimate = await publicClient.estimateGas({
+        account: address,
+        to: addresses.delegationManager,
+        data: redeemCalldata,
+        value: 0n,
+      })
+
       const tx = await walletClient.sendTransaction({
         to: addresses.delegationManager,
         data: redeemCalldata,
+        value: 0n,
+        gas: gasEstimate,
       })
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
