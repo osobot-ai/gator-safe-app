@@ -18,12 +18,12 @@ import {
 } from 'viem'
 import { DelegationManager } from '@metamask/smart-accounts-kit/contracts'
 import { ExecutionMode, createExecution } from '@metamask/smart-accounts-kit'
+import { getDelegationHashOffchain } from '@metamask/smart-accounts-kit/utils'
 import { getAddresses } from '../config/addresses'
 import type { StoredDelegation } from '../lib/storage'
 import {
   generateSalt,
   buildDelegationTypedData,
-  computeDelegationHash,
   type DelegationStruct,
 } from '../lib/delegations'
 
@@ -259,13 +259,17 @@ export default function StandaloneRedeem() {
 
       // Step 1: Create a redelegation from us (the delegate) to the DelegationMetaSwapAdapter
       const originalDelegation = parsedDelegation.delegation
-      const originalDelegationHash = computeDelegationHash({
+      const originalDelegationHash = getDelegationHashOffchain({
         delegate: originalDelegation.delegate,
         delegator: originalDelegation.delegator,
         authority: originalDelegation.authority,
-        caveats: originalDelegation.caveats,
+        caveats: originalDelegation.caveats.map(c => ({
+          enforcer: c.enforcer,
+          terms: c.terms,
+          args: '0x' as Hex,
+        })),
         salt: originalDelegation.salt,
-        signature: '0x' as Hex,
+        signature: originalDelegation.signature,
       })
 
       const redelegationSalt = generateSalt()
