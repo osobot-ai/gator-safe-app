@@ -348,12 +348,18 @@ export default function StandaloneRedeem() {
         ],
       })
 
-      // Send transaction directly from EOA
-      const tx = await walletClient.sendTransaction({
-        to: addrs.delegationMetaSwapAdapter,
-        data: swapCalldata,
-        value: 0n,
-      })
+      // Send transaction from EOA
+      // Use walletClient.request directly for Web3Auth compatibility with large calldata
+      const tx = await walletClient.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: address,
+          to: addrs.delegationMetaSwapAdapter,
+          data: swapCalldata,
+          value: '0x0',
+          chainId: `0x${chainId.toString(16)}`,
+        }] as any,
+      }) as Hex
 
       // Wait for receipt and check if tx actually succeeded
       const receipt = await publicClient!.waitForTransactionReceipt({ hash: tx })
