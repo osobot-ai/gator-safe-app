@@ -350,7 +350,7 @@ export default function StandaloneRedeem() {
 
       // Send transaction directly from EOA
       // Estimate gas first for Web3Auth compatibility
-      const gasEstimate = await publicClient.estimateGas({
+      const gasEstimate = await publicClient!.estimateGas({
         account: address,
         to: addrs.delegationMetaSwapAdapter,
         data: swapCalldata,
@@ -365,7 +365,7 @@ export default function StandaloneRedeem() {
       })
 
       // Wait for receipt and check if tx actually succeeded
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash: tx })
       if (receipt.status === 'reverted') {
         throw new Error(`Transaction reverted. The swap may have expired or the aggregator route failed. Try fetching a fresh quote and executing quickly. TX: ${tx}`)
       }
@@ -440,7 +440,7 @@ export default function StandaloneRedeem() {
         // Get token decimals (default to 18 if not specified)
         let decimals = 18
         try {
-          const result = await publicClient.readContract({
+          const result = await publicClient!.readContract({
             address: tokenAddress,
             abi: erc20Abi,
             functionName: 'decimals',
@@ -471,10 +471,7 @@ export default function StandaloneRedeem() {
       })
 
       // Send transaction directly to DelegationManager
-      const isEthTransfer = parsedDelegation.meta.scopeType === 'ethSpendingLimit'
-      const txValue = isEthTransfer ? parseEther(form.amount) : 0n
-
-      const gasEstimate = await publicClient.estimateGas({
+      const gasEstimate2 = await publicClient!.estimateGas({
         account: address,
         to: addresses.delegationManager,
         data: redeemCalldata,
@@ -485,10 +482,10 @@ export default function StandaloneRedeem() {
         to: addresses.delegationManager,
         data: redeemCalldata,
         value: 0n,
-        gas: gasEstimate,
+        gas: gasEstimate2,
       })
 
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash: tx })
       if (receipt.status === 'reverted') {
         throw new Error(`Transaction reverted. TX: ${tx}`)
       }
