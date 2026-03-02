@@ -48,6 +48,5 @@ export const recipes: Recipe[] = [
       },
     ],
     defaultValue: '0',
-    defaultExpirationSeconds: 604800, // 1 week
   },
 ]
