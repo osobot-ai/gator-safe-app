@@ -34,6 +34,13 @@ export interface StoredDelegation {
     calldataArgs?: Hex
     maxValue?: string
     recipeName?: string
+    customParams?: {
+      name: string
+      type: string
+      value: string
+      enforced: boolean
+      locked: boolean
+    }[]
   }
 }
 

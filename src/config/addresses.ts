@@ -14,6 +14,8 @@ export interface ChainAddresses {
   allowedMethodsEnforcer: Address
   limitedCallsEnforcer: Address
   argsEqualityCheckEnforcer: Address
+  exactCalldataEnforcer: Address
+  allowedCalldataEnforcer: Address
   redeemerEnforcer: Address
   delegationMetaSwapAdapter: Address
 }
@@ -35,6 +37,8 @@ const SHARED_ENFORCERS = {
   allowedMethodsEnforcer: '0x2c21fD0Cb9DC8445CB3fb0DC5E7Bb0Aca01842B5' as Address,
   limitedCallsEnforcer: '0x04658B29F6b82ed55274221a06Fc97D318E25416' as Address,
   argsEqualityCheckEnforcer: '0x44B8C6ae3C304213c3e298495e12497Ed3E56E41' as Address,
+  exactCalldataEnforcer: '0x99F2e9bF15ce5eC84685604836F71aB835DBBdED' as Address,
+  allowedCalldataEnforcer: '0xc2b0d624c1c4319760C96503BA27C347F3260f55' as Address,
   redeemerEnforcer: '0xE144b0b2618071B4E56f746313528a669c7E65c5' as Address,
   delegationMetaSwapAdapter: '0x5e4b49156D23D890e7DC264c378a443C2d22A80E' as Address,
 }

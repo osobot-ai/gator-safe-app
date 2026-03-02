@@ -14,13 +14,14 @@ import {
 } from '../lib/delegations'
 import {
   type PeriodType,
+  type CustomParam,
   periodLabel,
   periodToSeconds,
   buildCustomActionCaveats,
 } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
-import { recipes, type Recipe, type RecipeParam } from '../config/recipes'
+import { recipes, type Recipe } from '../config/recipes'
 
 type Step = 1 | 2 | 3 | 4 | 5
 type PermissionCategory = 'spendingLimit' | 'transferIntent' | 'swapIntent' | 'custom'
@@ -192,7 +193,7 @@ export default function CreateDelegation() {
   const [customTarget, setCustomTarget] = useState('')
   const [customMethodSig, setCustomMethodSig] = useState('')
   const [customMethodSelector, setCustomMethodSelector] = useState('')
-  const [customParams, setCustomParams] = useState<RecipeParam[]>([])
+  const [customParams, setCustomParams] = useState<CustomParam[]>([])
   const [customValue, setCustomValue] = useState('0')
   const [customMaxCalls, setCustomMaxCalls] = useState('')
   const [customMaxCallsEnabled, setCustomMaxCallsEnabled] = useState(false)
@@ -234,14 +235,14 @@ export default function CreateDelegation() {
   }
 
   function addCustomParam() {
-    setCustomParams((prev) => [...prev, { type: 'address', value: '', name: '', locked: false, description: '' }])
+    setCustomParams((prev) => [...prev, { type: 'address', value: '', name: '', locked: false, required: false, enforced: true, description: '' }])
   }
 
   function removeCustomParam(index: number) {
     setCustomParams((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function updateCustomParam(index: number, field: keyof RecipeParam, value: string | boolean) {
+  function updateCustomParam(index: number, field: keyof CustomParam, value: string | boolean) {
     setCustomParams((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)))
   }
 
@@ -263,6 +264,8 @@ export default function CreateDelegation() {
       value: p.type === 'address' && !p.value ? safe.safeAddress : p.value,
       name: p.name,
       locked: p.locked,
+      required: p.required,
+      enforced: p.required || p.locked,
       description: p.description,
     })))
     // Auto-set expiration from recipe default
@@ -316,7 +319,8 @@ export default function CreateDelegation() {
           if (!isAddress(customTarget)) return false
           if (!customMethodSelector) return false
           if (customParams.length === 0) return false
-          if (!buildCustomCalldata()) return false
+          if (customParams.some(p => p.required && !p.value)) return false
+          if (customParams.some(p => p.enforced && !p.value)) return false
           return true
         }
         // Transfer intent config
@@ -476,8 +480,8 @@ export default function CreateDelegation() {
         scopeType = 'swapIntent'
 
       } else if (category === 'custom') {
-        const calldata = buildCustomCalldata()
-        if (!calldata) throw new Error('Failed to encode calldata')
+        const requiredMissing = customParams.some(p => p.required && !p.value)
+        if (requiredMissing) throw new Error('Please fill in all required parameters')
 
         const expiryTs = expiryEnabled && expiryDate
           ? Math.floor(new Date(expiryDate).getTime() / 1000)
@@ -487,7 +491,7 @@ export default function CreateDelegation() {
           safe.chainId,
           customTarget as Address,
           customMethodSelector as Hex,
-          calldata,
+          customParams,
           customValue || '0',
           customMaxCallsEnabled && customMaxCalls ? parseInt(customMaxCalls) : undefined,
           expiryTs,
@@ -631,6 +635,13 @@ export default function CreateDelegation() {
           calldataArgs: category === 'custom' ? (buildCustomCalldata() || undefined) : undefined,
           maxValue: category === 'custom' ? (customValue || '0') : undefined,
           recipeName: category === 'custom' && activeRecipe ? activeRecipe.name : undefined,
+          customParams: category === 'custom' ? customParams.map(p => ({
+            name: p.name,
+            type: p.type,
+            value: p.value,
+            enforced: p.enforced,
+            locked: p.locked,
+          })) : undefined,
         },
       }
 
@@ -1213,21 +1224,45 @@ export default function CreateDelegation() {
                 + Add Parameter
               </button>
             </div>
+
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+              <strong>Enforced parameters</strong> are locked into the delegation — the delegate must use exactly these values. <strong>Unenforced parameters</strong> allow the delegate to choose any value.
+            </div>
+
+            {customParams.some(p => p.required && !p.value) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-xs text-red-400">
+                Please fill in all required parameters
+              </div>
+            )}
+
             {customParams.map((param, idx) => (
-              <div key={idx} className="border border-white/10 rounded-lg p-3 space-y-2">
+              <div key={idx} className={`border rounded-lg p-3 space-y-2 ${param.locked ? 'border-amber-500/20 bg-amber-500/5' : 'border-white/10'}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400">
                     {param.name || `Param ${idx}`}
-                    {param.locked && <span className="ml-1 text-amber-400">(locked)</span>}
+                    {param.required && <span className="ml-1 text-red-400">*</span>}
+                    {param.locked && <span className="ml-1 text-amber-400/60 text-[10px]">Set by recipe</span>}
                   </span>
-                  {!param.locked && (
-                    <button
-                      onClick={() => removeCustomParam(idx)}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      Remove
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={param.enforced}
+                        onChange={(e) => updateCustomParam(idx, 'enforced', e.target.checked)}
+                        disabled={param.locked}
+                        className="w-3 h-3 accent-amber-500"
+                      />
+                      <span className="text-[10px] text-gray-500">{param.enforced ? '🔒 Enforced' : 'Unenforced'}</span>
+                    </label>
+                    {!param.locked && (
+                      <button
+                        onClick={() => removeCustomParam(idx)}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {param.description && (
                   <p className="text-xs text-gray-500">{param.description}</p>
@@ -1428,8 +1463,11 @@ export default function CreateDelegation() {
                 </div>
                 {customParams.map((p, i) => (
                   <div key={i} className="flex justify-between">
-                    <span className="text-gray-500">{p.name || `Param ${i}`}</span>
-                    <span className="text-gray-300 font-mono text-xs">{p.value}</span>
+                    <span className="text-gray-500">
+                      {p.name || `Param ${i}`}
+                      {p.enforced ? ' 🔒' : ' (unenforced)'}
+                    </span>
+                    <span className="text-gray-300 font-mono text-xs">{p.value || '(delegate chooses)'}</span>
                   </div>
                 ))}
                 <div className="flex justify-between">
@@ -1481,7 +1519,12 @@ export default function CreateDelegation() {
 
           {category === 'custom' && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
-              🔧 This delegation allows the delegate to call {customMethodSig} on {customTarget.slice(0, 10)}... with locked parameters. The exact calldata is enforced on-chain.
+              🔧 This delegation allows the delegate to call {customMethodSig} on {customTarget.slice(0, 10)}...
+              {customParams.every(p => p.enforced)
+                ? ' All parameters are enforced (ExactCalldataEnforcer).'
+                : customParams.some(p => p.enforced)
+                  ? ` ${customParams.filter(p => p.enforced).length} of ${customParams.length} parameters are enforced (AllowedCalldataEnforcer).`
+                  : ' No parameters are enforced — only target and method are restricted.'}
             </div>
           )}
 
@@ -1497,7 +1540,7 @@ export default function CreateDelegation() {
 
           <button
             onClick={handleGrant}
-            disabled={signing}
+            disabled={signing || (category === 'custom' && customParams.some(p => p.required && !p.value))}
             className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold px-6 py-3 rounded-lg transition-colors"
           >
             {signing ? 'Requesting Signature...' : 'Grant Permission'}

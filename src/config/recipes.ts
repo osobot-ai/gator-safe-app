@@ -5,6 +5,7 @@ export interface RecipeParam {
   type: string
   value: string
   locked: boolean
+  required: boolean
   description: string
 }
 
@@ -37,6 +38,7 @@ export const recipes: Recipe[] = [
         type: 'address',
         value: '',
         locked: false,
+        required: true,
         description: 'Address to receive the claimed ETH fees',
       },
       {
@@ -44,6 +46,7 @@ export const recipes: Recipe[] = [
         type: 'bool',
         value: 'true',
         locked: true,
+        required: true,
         description: 'Unwrap flETH to native ETH',
       },
     ],

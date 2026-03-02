@@ -14,6 +14,7 @@ import {
   parseEther, 
   parseUnits, 
   encodeFunctionData,
+  encodeAbiParameters,
   erc20Abi
 } from 'viem'
 import { DelegationManager } from '@metamask/smart-accounts-kit/contracts'
@@ -131,6 +132,7 @@ export default function StandaloneRedeem() {
   const [selectedQuote, setSelectedQuote] = useState<SwapTrade | null>(null)
   const [fetchingQuotes, setFetchingQuotes] = useState(false)
   const [parsedDelegation, setParsedDelegation] = useState<StoredDelegation | null>(null)
+  const [customParamValues, setCustomParamValues] = useState<Record<number, string>>({})
   const [executing, setExecuting] = useState(false)
   const [executed, setExecuted] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -175,10 +177,49 @@ export default function StandaloneRedeem() {
     }
   }
 
+  function buildCustomCalldata(): Hex | null {
+    if (!parsedDelegation || !isCustom) return null
+    const meta = parsedDelegation.meta
+    const params = meta.customParams
+    if (!params || !meta.methodSelector) return null
+
+    const allEnforced = params.every(p => p.enforced)
+    if (allEnforced) {
+      return meta.calldataArgs || null
+    }
+
+    try {
+      const values = params.map((p, idx) => {
+        const val = p.enforced ? p.value : (customParamValues[idx] || '')
+        if (!val) return null
+        if (p.type === 'bool') return val === 'true'
+        if (p.type.startsWith('uint') || p.type.startsWith('int')) return BigInt(val)
+        return val
+      })
+      if (values.some(v => v === null)) return null
+
+      const encoded = encodeAbiParameters(
+        params.map(p => ({ type: p.type as any })),
+        values as any,
+      )
+      return `${meta.methodSelector}${encoded.slice(2)}` as Hex
+    } catch {
+      return null
+    }
+  }
+
   function canExecute(): boolean {
     if (!isConnected || !parsedDelegation) return false
     if (parsedDelegation.delegation.delegate.toLowerCase() !== address?.toLowerCase()) return false
-    if (isCustom) return true
+    if (isCustom) {
+      const params = parsedDelegation.meta.customParams
+      if (!params) return true
+      const allEnforced = params.every(p => p.enforced)
+      if (allEnforced) return true
+      return params.every((p, idx) =>
+        p.enforced || (customParamValues[idx] && customParamValues[idx].trim() !== '')
+      )
+    }
     if (isSwapIntent) {
       if (!swapForm.destinationToken || !isAddress(swapForm.destinationToken)) return false
       if (!swapForm.sourceAmount || parseFloat(swapForm.sourceAmount) <= 0) return false
@@ -425,12 +466,12 @@ export default function StandaloneRedeem() {
 
       if (isCustom) {
         const target = parsedDelegation.meta.targetAddress
-        const callData = parsedDelegation.meta.calldataArgs
+        const callData = buildCustomCalldata() || parsedDelegation.meta.calldataArgs
         if (!target || !callData) throw new Error('Custom delegation missing target or calldata')
 
         execution = createExecution({
           target,
-          value: 0n,
+          value: parseEther(parsedDelegation.meta.maxValue || '0'),
           callData,
         })
       } else if (parsedDelegation.meta.scopeType === 'ethSpendingLimit') {
@@ -504,6 +545,7 @@ export default function StandaloneRedeem() {
     setSwapQuotes(null)
     setSelectedQuote(null)
     setParsedDelegation(null)
+    setCustomParamValues({})
     setExecuted(false)
     setTxHash(null)
     setError(null)
@@ -727,9 +769,64 @@ export default function StandaloneRedeem() {
                     </div>
                   )}
                 </div>
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
-                  This delegation has locked parameters. Click Execute to call the pre-configured function on the target contract.
-                </div>
+
+                {parsedDelegation.meta.customParams && (
+                  <div className="space-y-3">
+                    {parsedDelegation.meta.customParams.every(p => p.enforced) ? (
+                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+                        All parameters are enforced. Click Execute to call the pre-configured function.
+                      </div>
+                    ) : (
+                      <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+                        Some parameters are unenforced — fill in the values below before executing.
+                      </div>
+                    )}
+
+                    {parsedDelegation.meta.customParams.map((p, idx) => (
+                      <div key={idx} className={`border rounded-lg p-3 ${p.enforced ? 'border-amber-500/20 bg-amber-500/5' : 'border-white/10'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs text-gray-400">
+                            {p.name || `Param ${idx}`} ({p.type})
+                            {p.enforced && ' 🔒'}
+                          </span>
+                        </div>
+                        {p.enforced ? (
+                          <div className="text-sm text-gray-300 font-mono bg-black/20 rounded px-2 py-1">
+                            {p.value}
+                          </div>
+                        ) : (
+                          <div>
+                            {p.type === 'bool' ? (
+                              <select
+                                value={customParamValues[idx] || ''}
+                                onChange={(e) => setCustomParamValues(prev => ({ ...prev, [idx]: e.target.value }))}
+                                className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-white focus:border-amber-500/50 focus:outline-none"
+                              >
+                                <option value="">Select...</option>
+                                <option value="true">true</option>
+                                <option value="false">false</option>
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder={p.type === 'address' ? '0x...' : 'Enter value'}
+                                value={customParamValues[idx] || ''}
+                                onChange={(e) => setCustomParamValues(prev => ({ ...prev, [idx]: e.target.value }))}
+                                className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:border-amber-500/50 focus:outline-none"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!parsedDelegation.meta.customParams && (
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+                    This delegation has locked parameters. Click Execute to call the pre-configured function on the target contract.
+                  </div>
+                )}
               </div>
             )}
 
