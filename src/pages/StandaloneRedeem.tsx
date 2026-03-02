@@ -137,6 +137,7 @@ export default function StandaloneRedeem() {
   const [txHash, setTxHash] = useState<string | null>(null)
 
   const isSwapIntent = parsedDelegation?.meta.scopeType === 'swapIntent'
+  const isCustom = parsedDelegation?.meta.scopeType === 'custom'
 
   // Parse delegation JSON
   function parseDelegationJson(json: string) {
@@ -177,6 +178,7 @@ export default function StandaloneRedeem() {
   function canExecute(): boolean {
     if (!isConnected || !parsedDelegation) return false
     if (parsedDelegation.delegation.delegate.toLowerCase() !== address?.toLowerCase()) return false
+    if (isCustom) return true
     if (isSwapIntent) {
       if (!swapForm.destinationToken || !isAddress(swapForm.destinationToken)) return false
       if (!swapForm.sourceAmount || parseFloat(swapForm.sourceAmount) <= 0) return false
@@ -400,7 +402,6 @@ export default function StandaloneRedeem() {
   async function handleExecuteRedemption() {
     if (!parsedDelegation || !walletClient || !publicClient) return
 
-    // Route to swap handler if it's a swap intent
     if (isSwapIntent) {
       return handleExecuteSwapRedemption()
     }
@@ -411,34 +412,39 @@ export default function StandaloneRedeem() {
     setError(null)
 
     try {
-      // Convert stored delegation to Smart Accounts Kit format
       const delegation = {
         ...parsedDelegation.delegation,
         caveats: parsedDelegation.delegation.caveats.map(caveat => ({
           ...caveat,
-          args: '0x' as Hex, // Default empty args
+          args: '0x' as Hex,
         }))
       }
-      const isEthTransfer = parsedDelegation.meta.scopeType === 'ethSpendingLimit'
       const addresses = getAddresses(chainId)
 
       let execution
-      
-      if (isEthTransfer) {
-        // ETH transfer — use SDK's createExecution
+
+      if (isCustom) {
+        const target = parsedDelegation.meta.targetAddress
+        const callData = parsedDelegation.meta.calldataArgs
+        if (!target || !callData) throw new Error('Custom delegation missing target or calldata')
+
+        execution = createExecution({
+          target,
+          value: 0n,
+          callData,
+        })
+      } else if (parsedDelegation.meta.scopeType === 'ethSpendingLimit') {
         execution = createExecution({
           target: form.recipient as Address,
           value: parseEther(form.amount),
           callData: '0x' as Hex,
         })
       } else {
-        // ERC-20 transfer
         const tokenAddress = parsedDelegation.meta.tokenAddress
         if (!tokenAddress) {
           throw new Error('Token address not found in delegation')
         }
 
-        // Get token decimals (default to 18 if not specified)
         let decimals = 18
         try {
           const result = await publicClient!.readContract({
@@ -464,14 +470,12 @@ export default function StandaloneRedeem() {
         })
       }
 
-      // Encode the redemption calldata
       const redeemCalldata = DelegationManager.encode.redeemDelegations({
-        delegations: [[delegation]], // Array of delegation chains
+        delegations: [[delegation]],
         modes: [ExecutionMode.SingleDefault],
         executions: [[execution]],
       })
 
-      // Send transaction directly to DelegationManager
       const tx = await walletClient.sendTransaction({
         to: addresses.delegationManager,
         data: redeemCalldata,
@@ -688,6 +692,7 @@ export default function StandaloneRedeem() {
                     <div>To: {parsedDelegation.delegation.delegate}</div>
                     <div>Type: {parsedDelegation.meta.scopeType}
                       {isSwapIntent && <span className="ml-2 text-blue-400">💱 Swap Intent</span>}
+                      {isCustom && <span className="ml-2 text-amber-400">🔧 Custom Action</span>}
                     </div>
                   </div>
                   
@@ -700,8 +705,36 @@ export default function StandaloneRedeem() {
               )}
             </div>
 
-            {/* Step 2: Configure Transfer (non-swap) */}
-            {parsedDelegation && !isSwapIntent && (
+            {/* Step 2: Custom delegation details */}
+            {parsedDelegation && isCustom && (
+              <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
+                <h3 className="text-lg font-medium text-white">2. Delegation Details</h3>
+                <div className="bg-black/30 rounded-lg p-4 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Target</span>
+                    <span className="text-gray-300 font-mono text-xs">{parsedDelegation.meta.targetAddress}</span>
+                  </div>
+                  {parsedDelegation.meta.methodSelector && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Method</span>
+                      <span className="text-gray-300 font-mono text-xs">{parsedDelegation.meta.methodSelector}</span>
+                    </div>
+                  )}
+                  {parsedDelegation.meta.recipeName && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Recipe</span>
+                      <span className="text-gray-300">{parsedDelegation.meta.recipeName}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+                  This delegation has locked parameters. Click Execute to call the pre-configured function on the target contract.
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Configure Transfer (non-swap, non-custom) */}
+            {parsedDelegation && !isSwapIntent && !isCustom && (
               <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
                 <h3 className="text-lg font-medium text-white">2. Configure Transfer</h3>
                 
@@ -843,7 +876,7 @@ export default function StandaloneRedeem() {
             {parsedDelegation && (
               <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
                 <h3 className="text-lg font-medium text-white">
-                  {isSwapIntent ? '3. Execute Swap' : '3. Execute Redemption'}
+                  {isSwapIntent ? '3. Execute Swap' : isCustom ? '3. Execute Action' : '3. Execute Redemption'}
                 </h3>
 
                 {isSwapIntent && (
@@ -861,7 +894,7 @@ export default function StandaloneRedeem() {
                   disabled={isSwapIntent ? (!selectedQuote || executing) : (!canExecute() || executing)}
                   className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold px-6 py-3 rounded-lg transition-colors"
                 >
-                  {executing ? 'Executing...' : isSwapIntent ? 'Execute Swap' : 'Execute Redemption'}
+                  {executing ? 'Executing...' : isSwapIntent ? 'Execute Swap' : isCustom ? 'Execute Action' : 'Execute Redemption'}
                 </button>
               </div>
             )}

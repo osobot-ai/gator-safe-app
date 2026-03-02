@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, type Address, type Hex, isAddress, parseEther, parseUnits, encodePacked, encodeAbiParameters } from 'viem'
+import { createPublicClient, http, type Address, type Hex, isAddress, parseEther, parseUnits, encodePacked, encodeAbiParameters, encodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 import { baseSepolia, base } from 'viem/chains'
 import { createDelegation } from '@metamask/smart-accounts-kit'
 import { DeleGatorModuleFactoryABI } from '../config/abis'
@@ -16,12 +16,14 @@ import {
   type PeriodType,
   periodLabel,
   periodToSeconds,
+  buildCustomActionCaveats,
 } from '../lib/enforcers'
 import { getEnvironment } from '../lib/environment'
 import { saveDelegation, type StoredDelegation } from '../lib/storage'
+import { recipes, type Recipe, type RecipeParam } from '../config/recipes'
 
 type Step = 1 | 2 | 3 | 4 | 5
-type PermissionCategory = 'spendingLimit' | 'transferIntent' | 'swapIntent'
+type PermissionCategory = 'spendingLimit' | 'transferIntent' | 'swapIntent' | 'custom'
 type PermissionType = 'eth' | 'erc20'
 type TokenOption = 'usdc' | 'oso' | 'custom'
 
@@ -187,6 +189,15 @@ export default function CreateDelegation() {
   const [swapAmount, setSwapAmount] = useState('')
   const [swapPeriod, setSwapPeriod] = useState<PeriodType>('daily')
 
+  const [customTarget, setCustomTarget] = useState('')
+  const [customMethodSig, setCustomMethodSig] = useState('')
+  const [customMethodSelector, setCustomMethodSelector] = useState('')
+  const [customParams, setCustomParams] = useState<RecipeParam[]>([])
+  const [customValue, setCustomValue] = useState('0')
+  const [customMaxCalls, setCustomMaxCalls] = useState('')
+  const [customMaxCallsEnabled, setCustomMaxCallsEnabled] = useState(false)
+  const [activeRecipe, setActiveRecipe] = useState<Recipe | null>(null)
+
   // UI state
   const [step, setStep] = useState<Step>(1)
   const [signing, setSigning] = useState(false)
@@ -204,6 +215,76 @@ export default function CreateDelegation() {
   const reviewStep = category === 'spendingLimit' ? 5 : 4
   // swapIntent and transferIntent both use 4 steps
   // configStep not used directly but kept for reference
+  void encodeFunctionData
+  void parseAbi
+
+  function computeSelector(sig: string): string {
+    try {
+      const selector = toFunctionSelector(`function ${sig}`)
+      return selector
+    } catch {
+      return ''
+    }
+  }
+
+  function handleMethodSigChange(sig: string) {
+    setCustomMethodSig(sig)
+    const sel = computeSelector(sig)
+    setCustomMethodSelector(sel)
+  }
+
+  function addCustomParam() {
+    setCustomParams((prev) => [...prev, { type: 'address', value: '', name: '', locked: false, description: '' }])
+  }
+
+  function removeCustomParam(index: number) {
+    setCustomParams((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function updateCustomParam(index: number, field: keyof RecipeParam, value: string | boolean) {
+    setCustomParams((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)))
+  }
+
+  function applyRecipe(recipe: Recipe) {
+    setActiveRecipe(recipe)
+    setCustomTarget(recipe.targetAddress)
+    setCustomMethodSig(recipe.methodSignature)
+    setCustomMethodSelector(recipe.methodSelector)
+    setCustomValue(recipe.defaultValue)
+    if (recipe.defaultMaxCalls !== undefined) {
+      setCustomMaxCallsEnabled(true)
+      setCustomMaxCalls(String(recipe.defaultMaxCalls))
+    } else {
+      setCustomMaxCallsEnabled(false)
+      setCustomMaxCalls('')
+    }
+    setCustomParams(recipe.params.map((p) => ({
+      type: p.type,
+      value: p.type === 'address' && !p.value ? safe.safeAddress : p.value,
+      name: p.name,
+      locked: p.locked,
+      description: p.description,
+    })))
+  }
+
+  function buildCustomCalldata(): Hex | null {
+    try {
+      if (!customMethodSig || customParams.length === 0) return null
+      const values = customParams.map((p) => {
+        if (p.type === 'bool') return p.value === 'true'
+        if (p.type.startsWith('uint') || p.type.startsWith('int')) return BigInt(p.value || '0')
+        return p.value
+      })
+      const encodedArgs = encodeAbiParameters(
+        customParams.map((p) => ({ type: p.type as 'address' | 'uint256' | 'bool' | 'bytes32' | 'bytes' | 'string' })),
+        values,
+      )
+      if (!customMethodSelector) return null
+      return `${customMethodSelector}${encodedArgs.slice(2)}` as Hex
+    } catch {
+      return null
+    }
+  }
 
   function canProceed(): boolean {
     switch (step) {
@@ -216,6 +297,13 @@ export default function CreateDelegation() {
         if (category === 'swapIntent') {
           if (!swapAmount || parseFloat(swapAmount) <= 0) return false
           if (!isAddress(getTokenAddress(swapSourceToken, swapSourceCustomAddress))) return false
+          return true
+        }
+        if (category === 'custom') {
+          if (!isAddress(customTarget)) return false
+          if (!customMethodSelector) return false
+          if (customParams.length === 0) return false
+          if (!buildCustomCalldata()) return false
           return true
         }
         // Transfer intent config
@@ -265,7 +353,7 @@ export default function CreateDelegation() {
 
       let sdkDelegation: any
       let metaLabel: string
-      let scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent'
+      let scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent' | 'custom'
 
       if (category === 'spendingLimit') {
         // === SPENDING LIMIT ===
@@ -374,6 +462,44 @@ export default function CreateDelegation() {
         metaLabel = `Swap: up to ${swapAmount} ${srcSymbol} ${periodLabel(swapPeriod)}`
         scopeType = 'swapIntent'
 
+      } else if (category === 'custom') {
+        const calldata = buildCustomCalldata()
+        if (!calldata) throw new Error('Failed to encode calldata')
+
+        const expiryTs = expiryEnabled && expiryDate
+          ? Math.floor(new Date(expiryDate).getTime() / 1000)
+          : undefined
+
+        const customCaveats = buildCustomActionCaveats(
+          safe.chainId,
+          customTarget as Address,
+          customMethodSelector as Hex,
+          calldata,
+          customValue || '0',
+          customMaxCallsEnabled && customMaxCalls ? parseInt(customMaxCalls) : undefined,
+          expiryTs,
+        )
+
+        const { ROOT_AUTHORITY: ROOT_AUTH_CUSTOM } = await import('@metamask/smart-accounts-kit')
+
+        sdkDelegation = {
+          delegate: delegate as Address,
+          delegator: moduleAddress,
+          authority: ROOT_AUTH_CUSTOM,
+          caveats: customCaveats.map((c) => ({
+            enforcer: c.enforcer,
+            terms: c.terms,
+            args: '0x' as Hex,
+          })),
+          salt: salt,
+          signature: '0x' as Hex,
+        }
+
+        metaLabel = activeRecipe
+          ? activeRecipe.name
+          : `Custom: ${customMethodSig} on ${customTarget.slice(0, 10)}...`
+        scopeType = 'custom'
+
       } else {
         // === TRANSFER INTENT ===
         // "Let delegate spend X, but delegator must receive Y"
@@ -481,12 +607,17 @@ export default function CreateDelegation() {
           moduleAddress,
           status: 'signed',
           delegationHash,
-          amount: category === 'spendingLimit' ? amount : category === 'swapIntent' ? swapAmount : sendAmount,
+          amount: category === 'spendingLimit' ? amount : category === 'swapIntent' ? swapAmount : category === 'custom' ? undefined : sendAmount,
           period: category === 'spendingLimit' ? period : category === 'swapIntent' ? swapPeriod : undefined,
           tokenAddress: category === 'spendingLimit'
             ? (permType === 'erc20' ? (tokenAddress as Address) : undefined)
             : undefined,
           expiryDate: expiryEnabled ? expiryDate : undefined,
+          targetAddress: category === 'custom' ? (customTarget as Address) : undefined,
+          methodSelector: category === 'custom' ? (customMethodSelector as Hex) : undefined,
+          calldataArgs: category === 'custom' ? (buildCustomCalldata() || undefined) : undefined,
+          maxValue: category === 'custom' ? (customValue || '0') : undefined,
+          recipeName: category === 'custom' && activeRecipe ? activeRecipe.name : undefined,
         },
       }
 
@@ -584,6 +715,14 @@ export default function CreateDelegation() {
                 setSendAmount('')
                 setReceiveAmount('')
                 setSwapAmount('')
+                setCustomTarget('')
+                setCustomMethodSig('')
+                setCustomMethodSelector('')
+                setCustomParams([])
+                setCustomValue('0')
+                setCustomMaxCalls('')
+                setCustomMaxCallsEnabled(false)
+                setActiveRecipe(null)
               }}
               className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-4 py-2 rounded-lg text-sm transition-colors"
             >
@@ -605,6 +744,9 @@ export default function CreateDelegation() {
       if (s === 5) return 'Review & Sign'
     } else if (category === 'swapIntent') {
       if (s === 3) return 'Configure Swap'
+      if (s === 4) return 'Review & Sign'
+    } else if (category === 'custom') {
+      if (s === 3) return 'Configure Action'
       if (s === 4) return 'Review & Sign'
     } else {
       if (s === 3) return 'Configure Intent'
@@ -668,7 +810,7 @@ export default function CreateDelegation() {
         <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
           <h2 className="text-lg font-semibold text-white">Permission Category</h2>
           <p className="text-sm text-gray-400">What kind of permission do you want to create?</p>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <button
               onClick={() => setCategory('spendingLimit')}
               className={`p-5 rounded-lg border text-left transition-colors ${
@@ -709,6 +851,20 @@ export default function CreateDelegation() {
               <div className="font-medium text-white">Swap Intent</div>
               <div className="text-xs text-gray-400 mt-1">
                 Allow periodic token swaps via MetaSwap adapter
+              </div>
+            </button>
+            <button
+              onClick={() => setCategory('custom')}
+              className={`p-5 rounded-lg border text-left transition-colors ${
+                category === 'custom'
+                  ? 'border-amber-500/50 bg-amber-500/10'
+                  : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+              }`}
+            >
+              <div className="text-2xl mb-2">🔧</div>
+              <div className="font-medium text-white">Custom Action</div>
+              <div className="text-xs text-gray-400 mt-1">
+                Delegate a specific contract call with locked parameters
               </div>
             </button>
           </div>
@@ -978,6 +1134,192 @@ export default function CreateDelegation() {
         </div>
       )}
 
+      {step === 3 && category === 'custom' && (
+        <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-6">
+          <h2 className="text-lg font-semibold text-white">Configure Custom Action</h2>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-gray-300">Recipes</h3>
+            <p className="text-xs text-gray-500">Pre-built delegation templates for common actions</p>
+            <div className="grid grid-cols-2 gap-3">
+              {recipes.map(recipe => (
+                <button
+                  key={recipe.id}
+                  onClick={() => applyRecipe(recipe)}
+                  className={`p-4 rounded-lg border text-left transition-colors ${
+                    activeRecipe?.id === recipe.id
+                      ? 'border-amber-500/50 bg-amber-500/10'
+                      : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">{recipe.icon}</span>
+                    <span className="font-medium text-white text-sm">{recipe.name}</span>
+                  </div>
+                  <div className="text-xs text-gray-400">{recipe.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          <div>
+            <label className="text-sm text-gray-400 block mb-1">Target Contract Address</label>
+            <input
+              type="text"
+              placeholder="0x..."
+              value={customTarget}
+              onChange={(e) => setCustomTarget(e.target.value)}
+            />
+            {customTarget && !isAddress(customTarget) && (
+              <p className="text-xs text-red-400 mt-1">Invalid address</p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-400 block mb-1">Function Signature</label>
+            <input
+              type="text"
+              placeholder="withdrawFees(address,bool)"
+              value={customMethodSig}
+              onChange={(e) => handleMethodSigChange(e.target.value)}
+            />
+            {customMethodSelector && (
+              <p className="text-xs text-gray-500 mt-1 font-mono">Selector: {customMethodSelector}</p>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-400">Parameters</label>
+              <button
+                onClick={addCustomParam}
+                className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+              >
+                + Add Parameter
+              </button>
+            </div>
+            {customParams.map((param, idx) => (
+              <div key={idx} className="border border-white/10 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">
+                    {param.name || `Param ${idx}`}
+                    {param.locked && <span className="ml-1 text-amber-400">(locked)</span>}
+                  </span>
+                  {!param.locked && (
+                    <button
+                      onClick={() => removeCustomParam(idx)}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {param.description && (
+                  <p className="text-xs text-gray-500">{param.description}</p>
+                )}
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    value={param.type}
+                    onChange={(e) => updateCustomParam(idx, 'type', e.target.value)}
+                    disabled={param.locked}
+                    className="col-span-1"
+                  >
+                    <option value="address">address</option>
+                    <option value="uint256">uint256</option>
+                    <option value="bool">bool</option>
+                    <option value="bytes32">bytes32</option>
+                    <option value="bytes">bytes</option>
+                    <option value="string">string</option>
+                  </select>
+                  {param.type === 'bool' ? (
+                    <select
+                      value={param.value}
+                      onChange={(e) => updateCustomParam(idx, 'value', e.target.value)}
+                      disabled={param.locked}
+                      className="col-span-2"
+                    >
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder={param.type === 'address' ? '0x...' : '0'}
+                      value={param.value}
+                      onChange={(e) => updateCustomParam(idx, 'value', e.target.value)}
+                      disabled={param.locked}
+                      className={`col-span-2 ${param.locked ? 'opacity-50' : ''}`}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+            {customParams.length > 0 && buildCustomCalldata() && (
+              <div className="bg-white/5 rounded-lg p-2 text-xs text-gray-500 font-mono break-all">
+                Calldata: {buildCustomCalldata()}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="text-sm text-gray-400 block mb-1">Max ETH Value</label>
+            <input
+              type="number"
+              placeholder="0"
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              min={0}
+              step="any"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customMaxCallsEnabled}
+                onChange={(e) => setCustomMaxCallsEnabled(e.target.checked)}
+                className="w-4 h-4 accent-amber-500"
+              />
+              <span className="text-sm text-gray-400">Limit number of calls</span>
+            </label>
+            {customMaxCallsEnabled && (
+              <input
+                type="number"
+                placeholder="1"
+                value={customMaxCalls}
+                onChange={(e) => setCustomMaxCalls(e.target.value)}
+                min={1}
+                step={1}
+                className="mt-2"
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={expiryEnabled}
+                onChange={(e) => setExpiryEnabled(e.target.checked)}
+                className="w-4 h-4 accent-amber-500"
+              />
+              <span className="text-sm text-gray-400">Set expiry date</span>
+            </label>
+            {expiryEnabled && (
+              <input
+                type="datetime-local"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                className="mt-2"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Review Step (Spending Limit: step 5, Transfer Intent: step 4) */}
       {step === reviewStep && (
         <div className="border border-white/10 rounded-xl p-6 bg-white/[0.02] space-y-4">
@@ -991,7 +1333,7 @@ export default function CreateDelegation() {
             <div className="flex justify-between">
               <span className="text-gray-500">Category</span>
               <span className="text-gray-300">
-                {category === 'spendingLimit' ? '💰 Spending Limit' : category === 'swapIntent' ? '💱 Swap Intent' : '🔄 Transfer Intent'}
+                {category === 'spendingLimit' ? '💰 Spending Limit' : category === 'swapIntent' ? '💱 Swap Intent' : category === 'custom' ? '🔧 Custom Action' : '🔄 Transfer Intent'}
               </span>
             </div>
 
@@ -1056,6 +1398,45 @@ export default function CreateDelegation() {
                 </div>
               </>
             )}
+
+            {category === 'custom' && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Target</span>
+                  <span className="text-gray-300 font-mono text-xs">{customTarget}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Method</span>
+                  <span className="text-gray-300 font-mono text-xs">{customMethodSig}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Selector</span>
+                  <span className="text-gray-300 font-mono text-xs">{customMethodSelector}</span>
+                </div>
+                {customParams.map((p, i) => (
+                  <div key={i} className="flex justify-between">
+                    <span className="text-gray-500">{p.name || `Param ${i}`}</span>
+                    <span className="text-gray-300 font-mono text-xs">{p.value}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Max ETH Value</span>
+                  <span className="text-gray-300">{customValue || '0'} ETH</span>
+                </div>
+                {customMaxCallsEnabled && customMaxCalls && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Max Calls</span>
+                    <span className="text-gray-300">{customMaxCalls}</span>
+                  </div>
+                )}
+                {activeRecipe && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Recipe</span>
+                    <span className="text-gray-300">{activeRecipe.icon} {activeRecipe.name}</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {category === 'swapIntent' && (
@@ -1082,6 +1463,12 @@ export default function CreateDelegation() {
           {category === 'swapIntent' && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
               💱 This delegation allows the delegate to swap up to {swapAmount} {getTokenSymbol(swapSourceToken)} {periodLabel(swapPeriod)} into any token via MetaSwap. Only the DelegationMetaSwapAdapter can redeem the delegation (enforced by RedeemerEnforcer). The delegate redelegates to the adapter to execute swaps.
+            </div>
+          )}
+
+          {category === 'custom' && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
+              🔧 This delegation allows the delegate to call {customMethodSig} on {customTarget.slice(0, 10)}... with locked parameters. The exact calldata is enforced on-chain.
             </div>
           )}
 

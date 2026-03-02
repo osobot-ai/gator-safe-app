@@ -16,7 +16,7 @@ export interface StoredDelegation {
   }
   meta: {
     label: string
-    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent'
+    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent' | 'custom'
     createdAt: string
     chainId: number
     safeAddress: Address
@@ -28,6 +28,12 @@ export interface StoredDelegation {
     period?: string
     tokenAddress?: Address
     expiryDate?: string
+    // Custom delegation meta
+    targetAddress?: Address
+    methodSelector?: Hex
+    calldataArgs?: Hex
+    maxValue?: string
+    recipeName?: string
   }
 }
 
