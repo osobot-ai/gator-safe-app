@@ -265,6 +265,19 @@ export default function CreateDelegation() {
       locked: p.locked,
       description: p.description,
     })))
+    // Auto-set expiration from recipe default
+    if (recipe.defaultExpirationSeconds) {
+      setExpiryEnabled(true)
+      const expiryMs = Date.now() + recipe.defaultExpirationSeconds * 1000
+      const dt = new Date(expiryMs)
+      // Format as datetime-local value: YYYY-MM-DDTHH:MM
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const formatted = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+      setExpiryDate(formatted)
+    } else {
+      setExpiryEnabled(false)
+      setExpiryDate('')
+    }
   }
 
   function buildCustomCalldata(): Hex | null {

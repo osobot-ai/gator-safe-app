@@ -19,6 +19,7 @@ export interface Recipe {
   params: RecipeParam[]
   defaultValue: string
   defaultMaxCalls?: number
+  defaultExpirationSeconds?: number // Auto-set TimestampEnforcer relative to creation time (e.g., 604800 = 1 week)
 }
 
 export const recipes: Recipe[] = [
@@ -47,5 +48,6 @@ export const recipes: Recipe[] = [
       },
     ],
     defaultValue: '0',
+    defaultExpirationSeconds: 604800, // 1 week
   },
 ]
