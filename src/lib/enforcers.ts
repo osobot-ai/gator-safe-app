@@ -1,4 +1,4 @@
-import { type Address, type Hex, encodePacked, parseEther, parseUnits } from 'viem'
+import { type Address, type Hex, encodePacked, parseEther, parseUnits, encodeAbiParameters } from 'viem'
 import { getAddresses } from '../config/addresses'
 import type { Caveat } from './storage'
 
@@ -116,11 +116,54 @@ export function buildErc20SpendingCaveats(
   return caveats
 }
 
+export interface CustomParam {
+  type: string
+  value: string
+  name: string
+  locked: boolean
+  required: boolean
+  enforced: boolean
+  description: string
+}
+
+/**
+ * Encode a single parameter value as 32-byte ABI encoding
+ */
+function encodeParamValue(type: string, value: string): Hex {
+  if (type === 'address') {
+    return encodeAbiParameters([{ type: 'address' }], [value as Address])
+  } else if (type === 'uint256') {
+    return encodeAbiParameters([{ type: 'uint256' }], [BigInt(value)])
+  } else if (type === 'bool') {
+    return encodeAbiParameters([{ type: 'bool' }], [value === 'true'])
+  } else if (type === 'bytes32') {
+    return encodeAbiParameters([{ type: 'bytes32' }], [value as Hex])
+  }
+  // Default: encode as bytes
+  return encodeAbiParameters([{ type: 'bytes' }], [value as Hex])
+}
+
+/**
+ * Encode full function calldata (selector + encoded args)
+ */
+function encodeFunctionCalldata(selector: Hex, params: CustomParam[]): Hex {
+  const types = params.map(p => ({ type: p.type }))
+  const values = params.map(p => {
+    if (p.type === 'address') return p.value as Address
+    if (p.type === 'uint256') return BigInt(p.value)
+    if (p.type === 'bool') return p.value === 'true'
+    if (p.type === 'bytes32') return p.value as Hex
+    return p.value
+  })
+  const encodedArgs = encodeAbiParameters(types as any, values as any)
+  return (selector + encodedArgs.slice(2)) as Hex
+}
+
 export function buildCustomActionCaveats(
   chainId: number,
   targetAddress: Address,
   methodSelector: Hex,
-  encodedCalldata: Hex,
+  customParams: CustomParam[],
   maxValueEth: string,
   maxCalls?: number,
   expiryTimestamp?: number,
@@ -128,26 +171,57 @@ export function buildCustomActionCaveats(
   const addrs = getAddresses(chainId)
   const caveats: Caveat[] = []
 
+  // AllowedTargetsEnforcer
   caveats.push({
     enforcer: addrs.allowedTargetsEnforcer,
     terms: encodePacked(['address'], [targetAddress]),
   })
 
+  // AllowedMethodsEnforcer
   caveats.push({
     enforcer: addrs.allowedMethodsEnforcer,
     terms: encodePacked(['bytes4'], [methodSelector as `0x${string}`]),
   })
 
-  caveats.push({
-    enforcer: addrs.argsEqualityCheckEnforcer,
-    terms: encodedCalldata,
-  })
+  // Determine which params are enforced
+  const enforcedParams = customParams.filter(p => p.enforced && p.value)
+  const allParamsEnforced = enforcedParams.length === customParams.length && customParams.every(p => p.enforced)
 
+  if (allParamsEnforced) {
+    // ALL params enforced → use ExactCalldataEnforcer
+    // terms = the full calldata (selector + abi-encoded args)
+    const fullCalldata = encodeFunctionCalldata(methodSelector, customParams)
+    caveats.push({
+      enforcer: addrs.exactCalldataEnforcer,
+      terms: fullCalldata,
+    })
+  } else if (enforcedParams.length > 0) {
+    // SOME params enforced → use AllowedCalldataEnforcer (one per enforced param)
+    // ABI encoding: selector is 4 bytes, each param is 32 bytes
+    // Param 0 starts at byte 4, param 1 at byte 36, param 2 at byte 68, etc.
+    for (let i = 0; i < customParams.length; i++) {
+      if (customParams[i].enforced && customParams[i].value) {
+        const startIndex = 4 + (i * 32)
+        const encodedValue = encodeParamValue(customParams[i].type, customParams[i].value)
+        caveats.push({
+          enforcer: addrs.allowedCalldataEnforcer,
+          terms: encodeAbiParameters(
+            [{ type: 'uint256' }, { type: 'bytes' }],
+            [BigInt(startIndex), encodedValue]
+          ),
+        })
+      }
+    }
+  }
+  // If NO params enforced, no calldata caveat (only target + method restrictions)
+
+  // ValueLteEnforcer
   caveats.push({
     enforcer: addrs.valueLteEnforcer,
     terms: encodePacked(['uint256'], [parseEther(maxValueEth)]),
   })
 
+  // Optional: LimitedCallsEnforcer
   if (maxCalls !== undefined) {
     caveats.push({
       enforcer: addrs.limitedCallsEnforcer,
@@ -155,12 +229,13 @@ export function buildCustomActionCaveats(
     })
   }
 
+  // Optional: TimestampEnforcer
   if (expiryTimestamp) {
     const now = Math.floor(Date.now() / 1000)
     caveats.push({
       enforcer: addrs.timestampEnforcer,
       terms: encodePacked(
-        ['uint256', 'uint256'],
+        ['uint128', 'uint128'],
         [BigInt(now), BigInt(expiryTimestamp)]
       ),
     })
