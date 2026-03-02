@@ -143,9 +143,11 @@ export default function RedeemDelegation() {
   )
 
   const isSwapIntent = selectedDelegation?.meta.scopeType === 'swapIntent'
+  const isCustom = selectedDelegation?.meta.scopeType === 'custom'
 
   function canExecute(): boolean {
     if (!selectedDelegation) return false
+    if (isCustom) return true
     if (isSwapIntent) {
       if (!swapForm.destinationToken || !isAddress(swapForm.destinationToken)) return false
       if (!swapForm.sourceAmount || parseFloat(swapForm.sourceAmount) <= 0) return false
@@ -340,7 +342,6 @@ export default function RedeemDelegation() {
   async function handleExecuteRedemption() {
     if (!selectedDelegation || !canExecute()) return
 
-    // Route to swap handler if it's a swap intent
     if (isSwapIntent) {
       return handleExecuteSwapRedemption()
     }
@@ -349,30 +350,36 @@ export default function RedeemDelegation() {
     setError(null)
 
     try {
-      // Convert stored delegation to Smart Accounts Kit format
       const delegation = {
         ...selectedDelegation.delegation,
         caveats: selectedDelegation.delegation.caveats.map(caveat => ({
           ...caveat,
-          args: '0x' as Hex, // Default empty args for redemption
+          args: '0x' as Hex,
         }))
       }
-      const isEthTransfer = selectedDelegation.meta.scopeType === 'ethSpendingLimit'
 
       let execution
-      
-      if (isEthTransfer) {
-        // ETH transfer — use SDK's createExecution
+
+      if (isCustom) {
+        const target = selectedDelegation.meta.targetAddress
+        const callData = selectedDelegation.meta.calldataArgs
+        if (!target || !callData) throw new Error('Custom delegation missing target or calldata')
+
+        execution = createExecution({
+          target,
+          value: 0n,
+          callData,
+        })
+      } else if (selectedDelegation.meta.scopeType === 'ethSpendingLimit') {
         execution = createExecution({
           target: form.recipient as Address,
           value: parseEther(form.amount),
           callData: '0x' as Hex,
         })
       } else {
-        // ERC-20 transfer
         const tokenAddress = selectedDelegation.meta.tokenAddress
         const decimals = form.tokenDecimals || 18
-        
+
         if (!tokenAddress) {
           throw new Error('Token address not found in delegation')
         }
@@ -390,18 +397,15 @@ export default function RedeemDelegation() {
         })
       }
 
-      // Encode the redemption calldata
       const redeemCalldata = DelegationManager.encode.redeemDelegations({
-        delegations: [[delegation]], // Array of delegation chains
+        delegations: [[delegation]],
         modes: [ExecutionMode.SingleDefault],
         executions: [[execution]],
       })
 
-      // Per SDK docs: EOA/wallet delegates send redeemCalldata to the DelegationManager
       const environment = getEnvironment(safe.chainId)
       const targetAddress = environment.DelegationManager
 
-      // Submit transaction via Safe Apps SDK
       const txResponse = await sdk.txs.send({
         txs: [{
           to: targetAddress,
@@ -553,6 +557,7 @@ export default function RedeemDelegation() {
                     {delegation.meta.scopeType === 'ethSpendingLimit' ? '⚡ ETH' 
                      : delegation.meta.scopeType === 'swapIntent' ? '💱 Swap'
                      : delegation.meta.scopeType === 'transferIntent' ? '🔄 Intent'
+                     : delegation.meta.scopeType === 'custom' ? '🔧 Custom'
                      : '🪙 Token'}
                   </span>
                 </div>
@@ -568,8 +573,36 @@ export default function RedeemDelegation() {
           </div>
         </div>
 
-        {/* Step 2: Configure - varies by type */}
-        {selectedDelegation && !isSwapIntent && (
+        {/* Step 2: Configure Custom (no inputs) */}
+        {selectedDelegation && isCustom && (
+          <div className="space-y-4 mb-6">
+            <h3 className="text-md font-medium text-white">2. Delegation Details</h3>
+            <div className="bg-black/30 rounded-lg p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Target</span>
+                <span className="text-gray-300 font-mono text-xs">{selectedDelegation.meta.targetAddress}</span>
+              </div>
+              {selectedDelegation.meta.methodSelector && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Method</span>
+                  <span className="text-gray-300 font-mono text-xs">{selectedDelegation.meta.methodSelector}</span>
+                </div>
+              )}
+              {selectedDelegation.meta.recipeName && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Recipe</span>
+                  <span className="text-gray-300">{selectedDelegation.meta.recipeName}</span>
+                </div>
+              )}
+            </div>
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
+              This delegation has locked parameters. Click Execute to call the pre-configured function on the target contract.
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Configure Transfer - varies by type */}
+        {selectedDelegation && !isSwapIntent && !isCustom && (
           <div className="space-y-4 mb-6">
             <h3 className="text-md font-medium text-white">2. Configure Transfer</h3>
             
@@ -711,7 +744,7 @@ export default function RedeemDelegation() {
         {selectedDelegation && (
           <div className="space-y-4">
             <h3 className="text-md font-medium text-white">
-              {isSwapIntent ? '3. Execute Swap' : '3. Execute Redemption'}
+              {isSwapIntent ? '3. Execute Swap' : isCustom ? '3. Execute Action' : '3. Execute Redemption'}
             </h3>
             
             {isSwapIntent && (
@@ -729,7 +762,7 @@ export default function RedeemDelegation() {
               disabled={isSwapIntent ? (!selectedQuote || executing) : (!canExecute() || executing)}
               className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold px-6 py-3 rounded-lg transition-colors"
             >
-              {executing ? 'Executing...' : isSwapIntent ? 'Execute Swap' : 'Execute Redemption'}
+              {executing ? 'Executing...' : isSwapIntent ? 'Execute Swap' : isCustom ? 'Execute Action' : 'Execute Redemption'}
             </button>
           </div>
         )}

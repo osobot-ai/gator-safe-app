@@ -1,4 +1,4 @@
-import { type Address, encodePacked, parseEther, parseUnits } from 'viem'
+import { type Address, type Hex, encodePacked, parseEther, parseUnits } from 'viem'
 import { getAddresses } from '../config/addresses'
 import type { Caveat } from './storage'
 
@@ -102,6 +102,59 @@ export function buildErc20SpendingCaveats(
   })
 
   // Optional: TimestampEnforcer
+  if (expiryTimestamp) {
+    const now = Math.floor(Date.now() / 1000)
+    caveats.push({
+      enforcer: addrs.timestampEnforcer,
+      terms: encodePacked(
+        ['uint256', 'uint256'],
+        [BigInt(now), BigInt(expiryTimestamp)]
+      ),
+    })
+  }
+
+  return caveats
+}
+
+export function buildCustomActionCaveats(
+  chainId: number,
+  targetAddress: Address,
+  methodSelector: Hex,
+  encodedCalldata: Hex,
+  maxValueEth: string,
+  maxCalls?: number,
+  expiryTimestamp?: number,
+): Caveat[] {
+  const addrs = getAddresses(chainId)
+  const caveats: Caveat[] = []
+
+  caveats.push({
+    enforcer: addrs.allowedTargetsEnforcer,
+    terms: encodePacked(['address'], [targetAddress]),
+  })
+
+  caveats.push({
+    enforcer: addrs.allowedMethodsEnforcer,
+    terms: encodePacked(['bytes4'], [methodSelector as `0x${string}`]),
+  })
+
+  caveats.push({
+    enforcer: addrs.argsEqualityCheckEnforcer,
+    terms: encodedCalldata,
+  })
+
+  caveats.push({
+    enforcer: addrs.valueLteEnforcer,
+    terms: encodePacked(['uint256'], [parseEther(maxValueEth)]),
+  })
+
+  if (maxCalls !== undefined) {
+    caveats.push({
+      enforcer: addrs.limitedCallsEnforcer,
+      terms: encodePacked(['uint256'], [BigInt(maxCalls)]),
+    })
+  }
+
   if (expiryTimestamp) {
     const now = Math.floor(Date.now() / 1000)
     caveats.push({
