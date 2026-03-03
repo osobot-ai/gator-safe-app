@@ -1,213 +1,69 @@
-# AGENTS.md — Custom Delegation + Recipes Feature
+# AGENTS.md — Fix: Replace ArgsEqualityCheckEnforcer with correct calldata enforcers
 
-## Overview
-Add a new delegation type: "Custom Delegation" — generic target + method + calldata scoped delegation. Plus a "Recipes" system with pre-built templates (first recipe: Flaunch Claim Fees).
+## Context
+The current implementation uses `ArgsEqualityCheckEnforcer` which checks if args passed to the enforcer match the terms. This is WRONG. We need:
+- **ExactCalldataEnforcer** — when ALL params are enforced (exact calldata match)
+- **AllowedCalldataEnforcer** — when only SOME params are enforced (one caveat per enforced param)
 
-## What exists already
-- `CreateDelegation.tsx` — Supports ethSpendingLimit, erc20SpendingLimit, transferIntent, swapIntent
-- `RedeemDelegation.tsx` — Redeems delegations from within Safe UI
-- `StandaloneRedeem.tsx` — Standalone page for external delegates to connect wallet and redeem
-- `src/lib/enforcers.ts` — Builds caveats for ETH/ERC20 spending
-- `src/lib/storage.ts` — localStorage delegation storage with types
-- `src/config/addresses.ts` — All enforcer addresses on Base + Base Sepolia
+## Enforcer Addresses (same on Base + Base Sepolia — deterministic)
+- ExactCalldataEnforcer: `0x99F2e9bF15ce5eC84685604836F71aB835DBBdED`
+- AllowedCalldataEnforcer: `0xc2b0d624c1c4319760C96503BA27C347F3260f55`
 
-### Key enforcer addresses already available in addresses.ts:
-- `allowedTargetsEnforcer` — Restricts which contracts can be called
-- `allowedMethodsEnforcer` — Restricts which function selectors can be called
-- `argsEqualityCheckEnforcer` — Enforces exact calldata match
-- `valueLteEnforcer` — Caps ETH value sent with tx
-- `timestampEnforcer` — Time-based expiry
-- `limitedCallsEnforcer` — Limits number of calls
+## Changes
 
-## Changes Needed
-
-### 1. Add new scopeType to storage.ts
-Add `'custom'` to the `scopeType` union type:
+### 1. Update `src/config/addresses.ts`
+Add to BOTH base and baseSepolia:
 ```typescript
-scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'transferIntent' | 'swapIntent' | 'custom'
+exactCalldataEnforcer: '0x99F2e9bF15ce5eC84685604836F71aB835DBBdED' as Address,
+allowedCalldataEnforcer: '0xc2b0d624c1c4319760C96503BA27C347F3260f55' as Address,
 ```
+Remove `argsEqualityCheckEnforcer` if it exists.
 
-Also add optional meta fields for custom delegations:
+### 2. Update `src/config/recipes.ts`
+Add `required: boolean` to RecipeParam interface:
 ```typescript
-// In StoredDelegation.meta
-targetAddress?: Address    // The allowed contract target
-methodSelector?: Hex       // The allowed method (4-byte selector)
-calldataArgs?: Hex         // The enforced calldata (full encoded args)
-maxValue?: string          // Max ETH value (usually "0")
-recipeName?: string        // If created from a recipe, store the recipe name
-```
-
-### 2. Add new permission category in CreateDelegation.tsx
-
-Add `'custom'` as a new PermissionCategory alongside existing ones.
-
-In the Step 1 category selection, add a new card:
-```
-🔧 Custom Action
-Delegate a specific contract call with locked parameters
-```
-
-When `custom` is selected, Step 2 shows:
-
-**Standard fields (dropdowns/inputs):**
-- **Target Address** — The contract to call (address input)
-- **Method** — Function selector (text input showing hex, or text input for human-readable like `withdrawFees(address,bool)`)
-  - When user types human-readable sig, auto-compute the 4-byte selector
-  - Show the computed selector below: "Selector: 0x4c2d94c0"
-- **Parameters / Calldata** — The encoded function arguments that will be enforced
-  - This should be a dynamic form: user adds parameter rows with type + value
-  - Types: address, uint256, bool, bytes32, bytes, string
-  - Values: text input
-  - Auto-encode using viem's `encodeAbiParameters`
-  - Show the full encoded calldata below
-- **Value (ETH)** — How much ETH the tx can send (default: "0")
-  - Use ValueLteEnforcer with the specified max
-- **Max Calls** — Optional, number of times this can be called (uses LimitedCallsEnforcer)
-  - Default: unlimited (no enforcer)
-  - If set: add LimitedCallsEnforcer with the specified count
-- **Expiry** — Optional timestamp (same as existing)
-
-**Caveats built for custom delegations:**
-1. `AllowedTargetsEnforcer` — terms: `abi.encodePacked(targetAddress)` — single allowed target
-2. `AllowedMethodsEnforcer` — terms: `abi.encodePacked(selector)` — single allowed method
-3. `ArgsEqualityCheckEnforcer` — terms: the encoded calldata args (everything after the selector). This enforces the EXACT parameters.
-4. `ValueLteEnforcer` — terms: `abi.encodePacked(uint256(maxValue))` — usually 0
-5. (Optional) `LimitedCallsEnforcer` — terms: `abi.encodePacked(uint256(maxCalls))`
-6. (Optional) `TimestampEnforcer` — same as existing
-
-### 3. Recipes Section
-
-**Above the custom delegation form**, show a "Recipes" section with clickable tiles.
-
-```tsx
-<h3>Recipes</h3>
-<p>Pre-built delegation templates for common actions</p>
-<div className="grid grid-cols-2 gap-3">
-  {recipes.map(recipe => (
-    <RecipeTile key={recipe.id} recipe={recipe} onClick={() => applyRecipe(recipe)} />
-  ))}
-</div>
-```
-
-**Recipe data structure:**
-```typescript
-interface Recipe {
-  id: string
-  name: string
-  description: string
-  icon: string
-  targetAddress: Address
-  methodSignature: string      // Human-readable: "withdrawFees(address,bool)"
-  methodSelector: Hex          // 4-byte: "0x4c2d94c0"
-  params: RecipeParam[]
-  defaultValue: string         // ETH value, usually "0"
-  defaultMaxCalls?: number     // Optional call limit
-}
-
 interface RecipeParam {
   name: string
-  type: string                 // "address", "bool", "uint256", etc.
-  value: string                // Pre-filled value (can be editable or locked)
-  locked: boolean              // If true, user can't change it
-  description: string          // Help text
+  type: string
+  value: string
+  locked: boolean      // User can't change the value
+  required: boolean    // Value must be filled before granting
+  description: string
 }
 ```
 
-**First recipe — Flaunch Claim Fees:**
+Update Flaunch recipe:
 ```typescript
-{
-  id: 'flaunch-claim-fees',
-  name: 'Flaunch Claim Fees',
-  description: 'Claim accumulated trading fees from Flaunch revenue stream. Fees are unwrapped to ETH and sent to the specified recipient.',
-  icon: '💰',
-  targetAddress: '0x72e6f7948b1B1A343B477F39aAbd2E35E6D27dde',
-  methodSignature: 'withdrawFees(address,bool)',
-  methodSelector: '0x4c2d94c0',
-  params: [
-    {
-      name: 'recipient',
-      type: 'address',
-      value: '',       // User fills in — this should default to the Safe address
-      locked: false,
-      description: 'Address to receive the claimed ETH fees',
-    },
-    {
-      name: 'unwrap',
-      type: 'bool',
-      value: 'true',
-      locked: true,    // Always unwrap to ETH
-      description: 'Unwrap flETH to native ETH',
-    },
-  ],
-  defaultValue: '0',    // No ETH sent with the call
-}
+params: [
+  {
+    name: 'recipient',
+    type: 'address',
+    value: '',
+    locked: false,
+    required: true,     // Must fill in recipient
+    description: 'Address to receive the claimed ETH fees',
+  },
+  {
+    name: 'unwrap',
+    type: 'bool',
+    value: 'true',
+    locked: true,
+    required: true,     // Always true
+    description: 'Unwrap flETH to native ETH',
+  },
+],
 ```
 
-When user clicks a recipe tile:
-1. Auto-populate all the custom delegation fields (target, method, params, value)
-2. Locked params are shown but grayed out / non-editable
-3. User fills in any unlocked params (e.g., recipient address)
-4. User still sets delegate address, expiry, max calls as normal
+### 3. Update `src/lib/enforcers.ts`
 
-**Store recipes in `src/config/recipes.ts`** so they're easy to add more later.
+Replace the `ArgsEqualityCheckEnforcer` caveat in `buildCustomActionCaveats` with the correct enforcer logic:
 
-### 4. Delegation label for custom type
-When saving the delegation, set the label to either:
-- Recipe name if from a recipe: e.g., "Flaunch Claim Fees"
-- "Custom: {methodSignature} on {targetAddress.slice(0,10)}..." if manually configured
-
-### 5. Update RedeemDelegation.tsx and StandaloneRedeem.tsx
-These already handle redemption generically. But for `custom` scope type:
-- Display different info: show the target contract, method, and locked params
-- The execution construction is different — instead of building a transfer:
-  ```typescript
-  const execution = createExecution({
-    target: delegation.meta.targetAddress,
-    value: 0n, // From ValueLteEnforcer
-    callData: encodeFunctionData with the locked params
-  })
-  ```
-  Wait — actually for custom delegations with ArgsEqualityCheckEnforcer, the calldata is FIXED. The delegate doesn't need to enter any params at redeem time. They just click "Execute" and the pre-encoded calldata is used.
-  
-  So for `custom` scope type redemption:
-  - No amount/recipient inputs needed
-  - Show what the delegation does: "Call withdrawFees(0x782..., true) on 0x72e6..."
-  - Single "Execute" button
-  - Build execution from the stored meta: target + method selector + encoded args
-
-### 6. Build the correct calldata for ArgsEqualityCheckEnforcer
-
-**IMPORTANT:** The `ArgsEqualityCheckEnforcer` checks the FULL calldata of the execution, NOT just the args. So the terms should be the complete `encodeFunctionData(...)` output (selector + encoded args).
-
-Actually wait — let me re-read the enforcer. The enforcer name says "ArgsEqualityCheck" which implies it checks the arguments portion (after the selector). Need to check.
-
-Looking at the delegation framework source: `ArgsEqualityCheckEnforcer` stores the expected calldata in `terms` and compares it against the `_executionCallData` from the execution. The `_executionCallData` in the delegation framework IS the full calldata (selector + args).
-
-So terms = the full encoded function call data (selector + args).
-
-When building the ArgsEqualityCheckEnforcer terms:
-```typescript
-import { encodeFunctionData, parseAbi } from 'viem'
-
-const terms = encodeFunctionData({
-  abi: parseAbi(['function withdrawFees(address,bool)']),
-  functionName: 'withdrawFees',
-  args: [recipientAddress, true],
-})
-// This gives us 0x4c2d94c0 + encoded args
-// Use this as the ArgsEqualityCheckEnforcer terms
-```
-
-Then at redemption time, the execution callData must be EXACTLY this same value.
-
-### 7. Update enforcers.ts
-Add a new function:
 ```typescript
 export function buildCustomActionCaveats(
   chainId: number,
   targetAddress: Address,
   methodSelector: Hex,
-  encodedCalldata: Hex,  // Full calldata (selector + args)
+  customParams: CustomParam[],  // Changed from encodedCalldata
   maxValueEth: string,
   maxCalls?: number,
   expiryTimestamp?: number,
@@ -227,11 +83,39 @@ export function buildCustomActionCaveats(
     terms: encodePacked(['bytes4'], [methodSelector as `0x${string}`]),
   })
 
-  // ArgsEqualityCheckEnforcer — lock exact calldata
-  caveats.push({
-    enforcer: addrs.argsEqualityCheckEnforcer,
-    terms: encodedCalldata, // Full calldata that must match
-  })
+  // Determine which params are enforced
+  const enforcedParams = customParams.filter(p => p.enforced && p.value)
+  const allParamsEnforced = enforcedParams.length === customParams.length && customParams.every(p => p.enforced)
+
+  if (allParamsEnforced) {
+    // ALL params enforced → use ExactCalldataEnforcer
+    // terms = the full calldata (selector + abi-encoded args)
+    const fullCalldata = encodeFunctionCalldata(methodSelector, customParams)
+    caveats.push({
+      enforcer: addrs.exactCalldataEnforcer,
+      terms: fullCalldata,
+    })
+  } else if (enforcedParams.length > 0) {
+    // SOME params enforced → use AllowedCalldataEnforcer (one per enforced param)
+    // Each caveat specifies: startIndex (byte offset) and value (expected bytes at that offset)
+    // ABI encoding: selector is 4 bytes, each param is 32 bytes
+    // Param 0 starts at byte 4, param 1 at byte 36, param 2 at byte 68, etc.
+    for (let i = 0; i < customParams.length; i++) {
+      if (customParams[i].enforced && customParams[i].value) {
+        const startIndex = 4 + (i * 32) // 4-byte selector + 32 bytes per param
+        const encodedValue = encodeParamValue(customParams[i].type, customParams[i].value)
+        // encodedValue should be a 32-byte hex string (left-padded for uint/address/bool, etc.)
+        caveats.push({
+          enforcer: addrs.allowedCalldataEnforcer,
+          terms: encodeAbiParameters(
+            [{ type: 'uint256' }, { type: 'bytes' }],
+            [BigInt(startIndex), encodedValue]
+          ),
+        })
+      }
+    }
+  }
+  // If NO params enforced, no calldata caveat (only target + method restrictions)
 
   // ValueLteEnforcer
   caveats.push({
@@ -252,7 +136,7 @@ export function buildCustomActionCaveats(
     const now = Math.floor(Date.now() / 1000)
     caveats.push({
       enforcer: addrs.timestampEnforcer,
-      terms: encodePacked(['uint256', 'uint256'], [BigInt(now), BigInt(expiryTimestamp)]),
+      terms: encodePacked(['uint128', 'uint128'], [BigInt(now), BigInt(expiryTimestamp)]),
     })
   }
 
@@ -260,17 +144,139 @@ export function buildCustomActionCaveats(
 }
 ```
 
-## UI Style
-Match the existing dark theme with amber/gold accent colors. The Recipes section should feel like a card grid similar to how the permission types are shown. Each recipe tile has:
-- Icon (emoji)
-- Name (bold)
-- Short description (gray text)
-- Arrow or indicator that it's clickable
+Add helper functions:
+```typescript
+// Encode a single parameter value as 32-byte ABI encoding
+function encodeParamValue(type: string, value: string): Hex {
+  if (type === 'address') {
+    return encodeAbiParameters([{ type: 'address' }], [value as Address])
+  } else if (type === 'uint256') {
+    return encodeAbiParameters([{ type: 'uint256' }], [BigInt(value)])
+  } else if (type === 'bool') {
+    return encodeAbiParameters([{ type: 'bool' }], [value === 'true'])
+  } else if (type === 'bytes32') {
+    return encodeAbiParameters([{ type: 'bytes32' }], [value as Hex])
+  }
+  // Default: encode as bytes
+  return encodeAbiParameters([{ type: 'bytes' }], [value as Hex])
+}
+
+// Encode full function calldata (selector + encoded args)
+function encodeFunctionCalldata(selector: Hex, params: CustomParam[]): Hex {
+  // Build ABI types and values from params
+  const types = params.map(p => ({ type: p.type }))
+  const values = params.map(p => {
+    if (p.type === 'address') return p.value as Address
+    if (p.type === 'uint256') return BigInt(p.value)
+    if (p.type === 'bool') return p.value === 'true'
+    if (p.type === 'bytes32') return p.value as Hex
+    return p.value
+  })
+  const encodedArgs = encodeAbiParameters(types, values)
+  return (selector + encodedArgs.slice(2)) as Hex // concat selector + encoded args
+}
+
+interface CustomParam {
+  type: string
+  value: string
+  name: string
+  locked: boolean
+  required: boolean
+  enforced: boolean    // NEW: whether this param should be enforced
+  description: string
+}
+```
+
+### 4. Update `src/pages/CreateDelegation.tsx`
+
+**State for param enforcement:**
+Each param row now has an "enforce" toggle. Add `enforced: boolean` to the customParams state:
+
+```typescript
+// Existing param state becomes:
+const [customParams, setCustomParams] = useState<{
+  type: string
+  value: string
+  name: string
+  locked: boolean
+  required: boolean
+  enforced: boolean     // NEW
+  description: string
+}[]>([])
+```
+
+When applying a recipe:
+- All params with `required: true` OR `locked: true` should default `enforced: true`
+- When manually adding params, `enforced` defaults to `true`
+
+**UI for each param row:**
+- Add a checkbox or toggle: "🔒 Enforce" next to each param
+- When checked, this param's value will be locked in the delegation
+- When unchecked, the delegate can use any value for this param
+- Locked params from recipes should always have enforced=true and the toggle disabled
+
+**Validation before granting:**
+- All `required` params must have values filled in
+- Show error: "Please fill in all required parameters" if any required param is empty
+- Disable the "Grant Permission" button until all required params are filled
+
+**Visual indicators:**
+- Required params: show a red asterisk (*) next to the name
+- Enforced params: show a lock icon 🔒
+- Locked params (from recipe): grayed out input + lock icon + "Set by recipe" hint
+
+**Info text above the form:**
+Add a brief explanation:
+"**Enforced parameters** are locked into the delegation — the delegate must use exactly these values. **Unenforced parameters** allow the delegate to choose any value."
+
+**Pass updated params to buildCustomActionCaveats:**
+```typescript
+const caveats = buildCustomActionCaveats(
+  chainId,
+  customTarget,
+  customSelector,
+  customParams,  // Now includes enforced flag
+  customMaxValue,
+  customMaxCalls || undefined,
+  expiryTimestamp || undefined,
+)
+```
+
+### 5. Update storage meta
+Store which params are enforced so the redeem page knows:
+```typescript
+// In StoredDelegation.meta for custom type
+customParams?: {
+  name: string
+  type: string
+  value: string
+  enforced: boolean
+  locked: boolean
+}[]
+```
+
+### 6. Update RedeemDelegation.tsx and StandaloneRedeem.tsx
+For custom scope redemption:
+- Show the enforced params and their locked values
+- Show unenforced params as editable inputs
+- Build execution calldata from: enforced param values (from delegation meta) + user-entered values for unenforced params
+- If ALL params were enforced (ExactCalldataEnforcer), show "Execute" button only — no inputs
+- If SOME params were enforced, show inputs for the unenforced ones
+
+Example for a `vote(uint256 propId, bool opinion)` with propId enforced:
+- Show: "propId: 42 🔒"
+- Input: "opinion: [true/false dropdown]"
+- User fills in opinion, clicks Execute
+- Build calldata: vote(42, userChosenOpinion)
+
+### 7. Remove argsEqualityCheckEnforcer
+- Remove from addresses.ts if present
+- Remove any imports/references
 
 ## Build Verification
-1. `npm run build` must pass
+1. `npx vite build` must pass
 2. No TypeScript errors
 3. No console errors
 
 ## Branch
-You are on `feat/custom-delegation-recipes`. Commit to THIS branch.
+You are on `fix/calldata-enforcers`. Commit to THIS branch.

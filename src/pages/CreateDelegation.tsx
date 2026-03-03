@@ -320,7 +320,8 @@ export default function CreateDelegation() {
           if (!customMethodSelector) return false
           if (customParams.length === 0) return false
           if (customParams.some(p => p.required && !p.value)) return false
-          if (customParams.some(p => p.enforced && !p.value)) return false
+          if (customParams.some(p => !p.value)) return false
+          if (customParams.some(p => p.type === 'address' && p.value && !/^0x[a-fA-F0-9]{40}$/.test(p.value))) return false
           return true
         }
         // Transfer intent config
@@ -1226,12 +1227,17 @@ export default function CreateDelegation() {
             </div>
 
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-400">
-              <strong>Enforced parameters</strong> are locked into the delegation — the delegate must use exactly these values. <strong>Unenforced parameters</strong> allow the delegate to choose any value.
+              All listed parameters will be enforced in the delegation. To leave a parameter unenforced, simply don't add it.
             </div>
 
             {customParams.some(p => p.required && !p.value) && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-xs text-red-400">
                 Please fill in all required parameters
+              </div>
+            )}
+            {customParams.some(p => p.required && p.type === 'address' && p.value && !/^0x[a-fA-F0-9]{40}$/.test(p.value)) && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 text-xs text-red-400">
+                Please enter a valid Ethereum address (0x followed by 40 hex characters)
               </div>
             )}
 
@@ -1244,17 +1250,7 @@ export default function CreateDelegation() {
                     {param.locked && <span className="ml-1 text-amber-400/60 text-[10px]">Set by recipe</span>}
                   </span>
                   <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={param.enforced}
-                        onChange={(e) => updateCustomParam(idx, 'enforced', e.target.checked)}
-                        disabled={param.locked}
-                        className="w-3 h-3 accent-amber-500"
-                      />
-                      <span className="text-[10px] text-gray-500">{param.enforced ? '🔒 Enforced' : 'Unenforced'}</span>
-                    </label>
-                    {!param.locked && (
+                    {!param.locked && !param.required && (
                       <button
                         onClick={() => removeCustomParam(idx)}
                         className="text-xs text-red-400 hover:text-red-300"
@@ -1271,7 +1267,7 @@ export default function CreateDelegation() {
                   <select
                     value={param.type}
                     onChange={(e) => updateCustomParam(idx, 'type', e.target.value)}
-                    disabled={param.locked}
+                    disabled={param.locked || param.required}
                     className="col-span-1"
                   >
                     <option value="address">address</option>
@@ -1465,7 +1461,7 @@ export default function CreateDelegation() {
                   <div key={i} className="flex justify-between">
                     <span className="text-gray-500">
                       {p.name || `Param ${i}`}
-                      {p.enforced ? ' 🔒' : ' (unenforced)'}
+                      {' 🔒'}
                     </span>
                     <span className="text-gray-300 font-mono text-xs">{p.value || '(delegate chooses)'}</span>
                   </div>
@@ -1520,11 +1516,7 @@ export default function CreateDelegation() {
           {category === 'custom' && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
               🔧 This delegation allows the delegate to call {customMethodSig} on {customTarget.slice(0, 10)}...
-              {customParams.every(p => p.enforced)
-                ? ' All parameters are enforced (ExactCalldataEnforcer).'
-                : customParams.some(p => p.enforced)
-                  ? ` ${customParams.filter(p => p.enforced).length} of ${customParams.length} parameters are enforced (AllowedCalldataEnforcer).`
-                  : ' No parameters are enforced — only target and method are restricted.'}
+              {' All listed parameters are enforced.'}
             </div>
           )}
 

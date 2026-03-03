@@ -184,10 +184,11 @@ export function buildCustomActionCaveats(
   })
 
   // Determine which params are enforced
-  const enforcedParams = customParams.filter(p => p.enforced && p.value)
-  const allParamsEnforced = enforcedParams.length === customParams.length && customParams.every(p => p.enforced)
+  // All listed params are enforced — if count matches method arity, use ExactCalldata
+  // If fewer params than method takes, use AllowedCalldata per param
+  const allParamsProvided = customParams.length > 0 && customParams.every(p => p.value)
 
-  if (allParamsEnforced) {
+  if (allParamsProvided) {
     // ALL params enforced → use ExactCalldataEnforcer
     // terms = the full calldata (selector + abi-encoded args)
     const fullCalldata = encodeFunctionCalldata(methodSelector, customParams)
@@ -195,12 +196,12 @@ export function buildCustomActionCaveats(
       enforcer: addrs.exactCalldataEnforcer,
       terms: fullCalldata,
     })
-  } else if (enforcedParams.length > 0) {
+  } else if (customParams.some(p => p.value)) {
     // SOME params enforced → use AllowedCalldataEnforcer (one per enforced param)
     // ABI encoding: selector is 4 bytes, each param is 32 bytes
     // Param 0 starts at byte 4, param 1 at byte 36, param 2 at byte 68, etc.
     for (let i = 0; i < customParams.length; i++) {
-      if (customParams[i].enforced && customParams[i].value) {
+      if (customParams[i].value) {
         const startIndex = 4 + (i * 32)
         const encodedValue = encodeParamValue(customParams[i].type, customParams[i].value)
         caveats.push({
